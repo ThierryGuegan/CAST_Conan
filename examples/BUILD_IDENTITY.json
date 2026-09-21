@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "application": "Application-A",
+  "application_version": "2026.09",
+  "git_commit": "0123456789abcdef0123456789abcdef01234567",
+  "pipeline_id": "123456",
+  "job_id": "7890",
+  "build_timestamp_utc": "2026-09-21T12:00:00Z",
+  "target": {"label": "qnx-arm64-release", "os": "QNX", "os_version": "7.1", "architecture": "aarch64", "build_type": "Release"},
+  "compiler": {"driver": "qcc", "version": "8.3", "variant": "gcc_ntoaarch64le"},
+  "conan": {"version": "2.8", "host_profile": "qnx-arm64", "build_profile": "linux-x86_64"},
+  "paths": {"source_root": "/ci/work/app", "generated_root": "/ci/work/app/generated", "qnx_target": "/opt/qnx710/target/qnx7"},
+  "generated_code": {"version": "R2024b", "generation_id": "model-build-456", "source_model_commit": "0123456789abcdef0123456789abcdef01234567"}
+}

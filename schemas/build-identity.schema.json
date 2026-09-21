@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cast-offline:build-identity:1",
+  "type": "object",
+  "required": ["application", "git_commit", "pipeline_id", "target", "compiler", "conan", "paths"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "application": {"type": "string", "minLength": 1},
+    "application_version": {"type": "string"},
+    "git_commit": {"type": "string", "minLength": 7},
+    "pipeline_id": {"type": "string", "minLength": 1},
+    "job_id": {"type": "string"},
+    "build_timestamp_utc": {"type": "string", "format": "date-time"},
+    "target": {
+      "type": "object",
+      "required": ["label", "os", "architecture", "build_type"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "os": {"type": "string", "minLength": 1},
+        "os_version": {"type": "string"},
+        "architecture": {"type": "string", "minLength": 1},
+        "build_type": {"type": "string", "minLength": 1}
+      }
+    },
+    "compiler": {
+      "type": "object",
+      "required": ["driver", "variant"],
+      "properties": {"driver": {"type": "string"}, "version": {"type": "string"}, "variant": {"type": "string"}}
+    },
+    "conan": {
+      "type": "object",
+      "required": ["host_profile", "build_profile"],
+      "properties": {"version": {"type": "string"}, "host_profile": {"type": "string"}, "build_profile": {"type": "string"}, "lockfile_sha256": {"type": "string"}}
+    },
+    "paths": {
+      "type": "object",
+      "required": ["source_root"],
+      "properties": {"source_root": {"type": "string"}, "generated_root": {"type": "string"}, "qnx_target": {"type": "string"}}
+    },
+    "generated_code": {
+      "type": "object",
+      "properties": {"version": {"type": "string"}, "generation_id": {"type": "string"}, "source_model_commit": {"type": "string"}}
+    }
+  }
+}
