@@ -78,6 +78,14 @@ def valid_fixture(root, two_profiles=False):
 
 
 class CollectorTests(unittest.TestCase):
+    def make_symlink_or_skip(self, target, link):
+        if not hasattr(os, "symlink"):
+            self.skipTest("symlink unavailable")
+        try:
+            os.symlink(target, link)
+        except OSError as error:
+            self.skipTest(f"symlink creation unavailable: {error}")
+
     def run_collector(self, input_root, mode="strict"):
         output = input_root.parent / (input_root.name + "-out")
         code = collector.main(["--input-root", str(input_root), "--output-parent", str(output), "--mode", mode, "--no-zip"])
@@ -193,7 +201,7 @@ class CollectorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "drop"
             valid_fixture(root)
-            os.symlink(root / "source" / "main.c", root / "source" / "link.c")
+            self.make_symlink_or_skip(root / "source" / "main.c", root / "source" / "link.c")
             code, _ = self.run_collector(root)
             self.assertEqual(2, code)
 
@@ -285,13 +293,11 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual("starting\ntoken=super-secret-value\nfinished\n", exported)
 
     def test_internal_header_symlink_is_materialized(self):
-        if not hasattr(os, "symlink"):
-            self.skipTest("symlink unavailable")
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / "cache"
             destination = Path(temp) / "export"
             put(source / "real" / "dep.h", "#pragma once\n")
-            os.symlink(source / "real" / "dep.h", source / "alias.h")
+            self.make_symlink_or_skip(source / "real" / "dep.h", source / "alias.h")
             copied = client_ci_export.copy_selected(source, destination, client_ci_export.HEADER_EXTENSIONS)
             self.assertEqual(2, copied)
             self.assertFalse((destination / "alias.h").is_symlink())
