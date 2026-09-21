@@ -41,13 +41,6 @@ REQUIRED_IDENTITY_KEYS = {
     "TargetArchitecture", "Compiler", "CompilerVariant", "BuildType",
     "HostProfile", "BuildProfile", "BuildPipeline",
 }
-SECRET_PATTERNS = [
-    ("credential-assignment", re.compile(r"(?i)\b(password|passwd|token|secret|api[_-]?key|proxyPassword)\b\s*[:=]\s*[^\s,;]+")),
-    ("authorization-bearer", re.compile(r"(?i)\bAuthorization\s*:\s*Bearer\s+\S+")),
-    ("password-argument", re.compile(r"(?i)(--password|--token|--secret)\s+\S+")),
-    ("credential-url", re.compile(r"(?i)https?://[^\s:/]+:[^@\s]+@")),
-    ("private-key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
-]
 ANALYSIS_PATTERNS = {
     "missing_headers": re.compile(r"(?i)(file not found|cannot open include file|no such file or directory).*\.(h|hpp|hh|hxx)"),
     "preprocessor_errors": re.compile(r"(?i)(preprocess|preprocessor|#error).*\b(error|failed|failure)\b"),
@@ -111,13 +104,6 @@ class Audit:
         if self.critical_count:
             return "NOT_QUALIFIED" if self.mode == "strict" else "EXPLORATORY"
         return "READY_FOR_ANALYSIS" if self.mode == "strict" else "EXPLORATORY"
-
-
-def redact(text: str) -> str:
-    redacted = text
-    for _, pattern in SECRET_PATTERNS:
-        redacted = pattern.sub("<REDACTED>", redacted)
-    return redacted
 
 
 def is_relative_to(path: Path, root: Path) -> bool:
@@ -319,33 +305,6 @@ def verify_input_manifest(raw_root: Path, audit: Audit) -> Dict[str, Any]:
     return result
 
 
-def path_under_any(path: Path, roots: Sequence[Path]) -> bool:
-    resolved = path.resolve()
-    return any(is_relative_to(resolved, root.resolve()) for root in roots if root.exists())
-
-
-def scan_secrets(raw_root: Path, audit: Audit) -> Dict[str, Any]:
-    excluded = [raw_root / "source", raw_root / "generated"]
-    findings: List[Dict[str, Any]] = []
-    for path in raw_root.rglob("*"):
-        if not path.is_file() or path.is_symlink() or path_under_any(path, excluded):
-            continue
-        if path.suffix.lower() not in TEXT_EXTENSIONS and path.name not in {"FILES.sha256"}:
-            continue
-        try:
-            stream = path.open("r", encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        with stream:
-            for line_no, line in enumerate(stream, 1):
-                for name, pattern in SECRET_PATTERNS:
-                    if pattern.search(line):
-                        finding = {"file": path.relative_to(raw_root).as_posix(), "line": line_no, "pattern": name}
-                        findings.append(finding)
-                        audit.critical("SEC-SECRET", f"Potential secret detected ({name})", f"{finding['file']}:{line_no}")
-    return {"finding_count": len(findings), "findings": findings}
-
-
 def copy_tree_safe(source: Path, destination: Path, predicate=None) -> Tuple[int, int]:
     copied = 0
     skipped = 0
@@ -371,29 +330,6 @@ def copy_tree_safe(source: Path, destination: Path, predicate=None) -> Tuple[int
             shutil.copy2(src, dst)
             copied += 1
     return copied, skipped
-
-
-def copy_redacted_tree(source: Path, destination: Path) -> int:
-    copied = 0
-    if not source.exists():
-        return copied
-    for current, dirs, files in os.walk(source, followlinks=False):
-        current_path = Path(current)
-        dirs[:] = [d for d in dirs if d not in SKIP_NAMES and not (current_path / d).is_symlink()]
-        for filename in files:
-            src = current_path / filename
-            if src.is_symlink() or not src.is_file():
-                continue
-            dst = destination / src.relative_to(source)
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            if src.suffix.lower() in TEXT_EXTENSIONS or src.name.endswith(".json"):
-                with src.open("r", encoding="utf-8", errors="replace") as input_stream, dst.open("w", encoding="utf-8") as output_stream:
-                    for line in input_stream:
-                        output_stream.write(redact(line))
-            else:
-                shutil.copy2(src, dst)
-            copied += 1
-    return copied
 
 
 def header_candidate(path: Path) -> bool:
@@ -1352,9 +1288,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         shutil.copy2(raw_root / "FILES.sha256", package_root / "evidence" / "CLIENT_FILES.sha256")
     elif (raw_root / "identity" / "FILES.sha256").is_file():
         shutil.copy2(raw_root / "identity" / "FILES.sha256", package_root / "evidence" / "CLIENT_FILES.sha256")
-    security_result = scan_secrets(raw_root, audit)
-    write_json(package_root / "security" / "sanitization-report.json", security_result)
-
     mappings: List[Dict[str, str]] = []
     source_root = raw_root / "source"
     generated_root = raw_root / "generated"
@@ -1409,16 +1342,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if dependency_stats["dependency_file_count"] == 0:
         audit.warning("DEPENDENCY-FILES-MISSING", "No .d dependency files supplied")
 
-    copy_redacted_tree(raw_root / "logs", package_root / "evidence" / "logs")
-    copy_redacted_tree(raw_root / "evidence", package_root / "evidence" / "client")
-    copy_redacted_tree(raw_root / "compiler", package_root / "evidence" / "compiler")
-    copy_redacted_tree(raw_root / "compilation", package_root / "evidence" / "compilation")
+    copy_tree_safe(raw_root / "logs", package_root / "evidence" / "logs")
+    copy_tree_safe(raw_root / "evidence", package_root / "evidence" / "client")
+    copy_tree_safe(raw_root / "compiler", package_root / "evidence" / "compiler")
+    copy_tree_safe(raw_root / "compilation", package_root / "evidence" / "compilation")
     for source, destination in (
         (raw_root / "conan" / "profiles", package_root / "evidence" / "conan" / "profiles"),
         (raw_root / "conan" / "lockfiles", package_root / "evidence" / "conan" / "lockfiles"),
         (raw_root / "conan" / "generated", package_root / "evidence" / "conan" / "generated"),
     ):
-        copy_redacted_tree(source, destination)
+        copy_tree_safe(source, destination)
 
     baseline_result = compare_baseline(package_root, args.baseline)
     summary["baseline_changes"] = len(baseline_result.get("changes", []))

@@ -4,12 +4,12 @@ Version 2.1.0. Cette version de production met en œuvre les actions P0, P1 et P
 
 ## Décision d’architecture
 
-L’équipe CAST ne lance ni Conan, ni Make, ni GCC/QCC et ne reconstruit pas les applications. L’équipe client exécute seulement un export post-build dans le job qui possède déjà le cache Conan, le QNX SDP et les résultats de compilation. Le collecteur CAST travaille ensuite exclusivement sur le bundle transféré.
+L’équipe CAST ne lance ni Conan, ni Make, ni GCC/QCC et ne reconstruit pas les applications. L’équipe client exécute seulement un export post-build dans le job qui possède déjà le cache Conan, le SDK cible et les résultats de compilation. Le collecteur CAST travaille ensuite exclusivement sur le bundle de livrables transféré.
 
 ```mermaid
 flowchart TD
     C["CI client : build normal"] --> E["Export post-build automatisé"]
-    E --> B["CAST_EVIDENCE_BUNDLE + FILES.sha256"]
+    E --> B["CAST_DELIVERABLES_BUNDLE"]
     B --> G{"Collecteur CAST strict"}
     G -->|bloquant| N["NOT_QUALIFIED"]
     G -->|conforme| P["Package CAST portable"]
@@ -25,26 +25,24 @@ Cette approche ne dépend pas de `CPP Compilation Database Discoverer`. Le `comp
 |---|---:|---:|
 | Compiler et exécuter Conan/QCC | Oui | Non |
 | Produire identité, graphe, inventaire exact et probes QCC | Oui, dans la CI | Non |
-| Exporter les en-têtes Conan host et QNX | Automatique via `client_ci_export.py` | Non |
-| Produire `FILES.sha256` | Automatique via `client_ci_export.py` | Vérifie |
+| Exporter les en-têtes Conan host et SDK/toolchain | Automatique via `client_ci_export.py` | Non |
 | Exécuter le collecteur | Non | Oui |
 | Décider READY/NOT_QUALIFIED | Non | Automatique puis revue CAST |
 | Configurer et lancer Imaging | Non | Oui |
 
 ## Contenu client obligatoire
 
-Le bundle remis à CAST doit contenir au minimum :
+Le bundle de livrables remis à CAST doit contenir au minimum :
 
 ```text
-CAST_EVIDENCE_BUNDLE/
-├── FILES.sha256
+CAST_DELIVERABLES_BUNDLE/
 ├── identity/BUILD_IDENTITY.json
 ├── source/
-├── generated/                         # si code Matlab séparé
+├── generated/                         # si code généré séparé
 ├── compilation/compile_commands.json  # ou compilation-units.json
 ├── build/*.d                          # recommandé ; absence = avertissement
 ├── build/*.rsp                        # si référencés par une commande
-├── logs/                              # journaux de build, expurgés
+├── logs/                              # journaux de build transférés tels que fournis
 ├── conan/
 │   ├── packages.json
 │   ├── conan-graph.json
@@ -55,7 +53,7 @@ CAST_EVIDENCE_BUNDLE/
 │   ├── qcc-variants.json
 │   ├── *.macros.txt
 │   └── *.includes.txt
-└── qnx/                               # miroir des en-têtes de QNX_TARGET
+└── qnx/                               # miroir des en-têtes SDK/sysroot, si applicable
 ```
 
 Les formats normatifs se trouvent dans `schemas/` et des exemples dans `examples/`.
@@ -64,7 +62,7 @@ Les formats normatifs se trouvent dans `schemas/` et des exemples dans `examples
 
 ### 1. Produire les preuves pendant le build
 
-Le job client conserve le `compile_commands.json` déjà généré par CMake, Bear, une instrumentation interne ou la Build Factory. S’il existe déjà, aucune nouvelle compilation n’est nécessaire. À défaut, le client doit produire `compilation/compilation-units.json` avec les mêmes champs `directory`, `file` et `arguments`. Un journal seul ou des `.d` seuls ne reconstituent pas de façon fiable les macros, l’ordre des `-I` et les response files ; ils ne qualifient donc pas un passage strict.
+Le job client conserve le `compile_commands.json` déjà généré par CMake, Bear, une instrumentation interne ou la CI. S’il existe déjà, aucune nouvelle compilation n’est nécessaire. À défaut, le client doit produire `compilation/compilation-units.json` avec les mêmes champs `directory`, `file` et `arguments`. Un journal seul ou des `.d` seuls ne reconstituent pas de façon fiable les macros, l’ordre des `-I` et les response files ; ils ne qualifient donc pas un passage strict.
 
 Pour chaque variante QCC et chaque langage réellement utilisés, exécuter dans le job de build, une fois par image de toolchain :
 
@@ -106,7 +104,7 @@ Exemple à adapter dans le même conteneur/job que le build :
 
 ```sh
 python3 client_ci_export.py \
-  --bundle "$CI_ARTIFACTS/CAST_EVIDENCE_BUNDLE" \
+  --bundle "$CI_ARTIFACTS/CAST_DELIVERABLES_BUNDLE" \
   --source "$CI_PROJECT_DIR/src" \
   --generated "$CI_PROJECT_DIR/generated" \
   --build-root "$CI_PROJECT_DIR/build" \
@@ -135,13 +133,13 @@ python3 client_ci_export.py \
 
 `git_commit`, `pipeline_id` et `job_id` sont automatiquement lus depuis les variables GitLab, GitHub Actions ou Azure DevOps connues ; ils peuvent aussi être passés explicitement. L’exporteur échoue si l’identité minimale, le package Conan exact ou les en-têtes sont absents. Il ne lance aucun outil de build.
 
-Après l’export, archiver le dossier sans le modifier. `FILES.sha256` couvre chaque fichier ; tout ajout, retrait, doublon ou changement après export bloque le mode strict.
+Après l’export, contrôler que les livrables attendus sont présents, puis archiver le dossier sans modification manuelle.
 
 ## Exécution côté CAST
 
 ```sh
 python3 cast_offline_collector.py \
-  --input-root /reception/CAST_EVIDENCE_BUNDLE \
+  --input-root /reception/CAST_DELIVERABLES_BUNDLE \
   --output-parent /work/cast-packages \
   --mode strict
 ```
@@ -152,7 +150,7 @@ Pour comparer avec une collecte antérieure :
 
 ```sh
 python3 cast_offline_collector.py \
-  --input-root /reception/CAST_EVIDENCE_BUNDLE \
+  --input-root /reception/CAST_DELIVERABLES_BUNDLE \
   --output-parent /work/cast-packages \
   --baseline /work/cast-packages/previous-package \
   --mode strict
@@ -218,32 +216,16 @@ Les intitulés précis des écrans peuvent varier avec le niveau de maintenance 
 
 Après une première analyse, placer les logs CAST dans `cast-analysis-logs/` du bundle et relancer la collecte. Des indicateurs de header manquant, erreur de préprocesseur, parseur ou symbole inconnu donnent `NOT_QUALIFIED`. Même sans indicateur automatique, une revue humaine reste obligatoire (`QUALIFIED_WITH_RESERVATIONS`).
 
-## Garde-fous P0/P1/P2
-
-- validation d’identité et versions de schémas ;
-- inventaire Conan exact et confrontation au graphe ;
-- séparation stricte des contextes Conan host/build ;
-- rejet des liens symboliques, sorties de racine, secrets probables et limites excessives ;
-- vérification exhaustive `FILES.sha256` ;
-- profils par commande, response files, sysroots, probes QCC, `-Wp` et `-Xpreprocessor` ;
-- vérification à 100 % des sources C/C++ collectées pour la cible ;
-- parseur `.d` qui ignore les règles phony générées par `-MP` ;
-- chemins portables et séparation manuel/généré ;
-- comparaison de baseline, volumétrie et qualification post-analyse ;
-- suite de tests automatisés sans dépendance Python externe.
-
 ## Limites résiduelles
 
-- Le hash garantit l’intégrité après création mais pas l’authenticité de l’émetteur. Pour une chaîne réglementée, signer l’archive ou son manifeste avec le mécanisme de signature de l’entreprise.
-- Le collecteur ne prouve pas que le `compile_commands.json` provient réellement du binaire livré ; cette liaison repose sur l’identité CI, le commit, le pipeline et, idéalement, une attestation/signature de la Build Factory.
+- Le collecteur ne prouve pas que le `compile_commands.json` provient réellement du binaire livré ; cette liaison repose sur l’identité CI, le commit, le pipeline et, idéalement, une attestation de l’environnement de build qualifié.
 - Les règles conditionnelles internes aux makefiles qui n’ont pas produit de commande ne sont pas analysées. Le périmètre est la cible réellement construite.
 - Les extensions propriétaires QCC non observées dans les arguments/probes peuvent nécessiter un réglage CAST complémentaire. Elles doivent alors être ajoutées comme cas de test et non corrigées silencieusement dans les makefiles.
-- Le scanner de secrets emploie des motifs prudents : faux positifs possibles, et il ne remplace pas un DLP d’entreprise.
 - Une couverture stricte de 100 % suppose que le dossier `source/` soit limité au périmètre de la cible. Si le dépôt contient plusieurs cibles, exporter seulement les sources de la cible ou produire un bundle par cible.
 
 ## Pourquoi ne pas modifier les makefiles
 
-L’export post-build évite une divergence avec le build qualifié, conserve les options réellement utilisées, ne touche pas au produit et reste réutilisable pour x86/ARM/Linux/QNX. Une modification des makefiles peut sembler plus directe mais crée une variante spécifique CAST, demande de maintenir les chemins Conan en double, risque de changer l’ordre des includes/macros et doit être revalidée à chaque évolution de la Build Factory.
+L’export post-build évite une divergence avec le build qualifié, conserve les options réellement utilisées, ne touche pas au produit et reste réutilisable pour x86/ARM/Linux/QNX. Une modification des makefiles peut sembler plus directe mais crée une variante spécifique CAST, demande de maintenir les chemins Conan en double, risque de changer l’ordre des includes/macros et doit être revalidée à chaque évolution de l’environnement de build.
 
 En contrepartie, la solution recommandée exige une discipline d’artefacts CI et un export exact du cache. Les contrôles stricts, l’inventaire signé optionnel, les profils séparés, la couverture et la baseline réduisent ce risque sans déplacer Conan ou QCC vers l’équipe CAST.
 
@@ -258,7 +240,7 @@ Le code utilise uniquement la bibliothèque standard Python 3.9+.
 
 Pour l’exploitation en production, voir également `docs/PRODUCTION_RUNBOOK.md`, `docs/THREAT_MODEL.md` et `RELEASE_CHECKLIST.md`.
 
-La procédure pas-à-pas destinée à la CI/Build Factory et à l’équipe plateforme/QNX est disponible dans `docs/CLIENT_TEAM_PROCEDURE.md`.
+La procédure pas-à-pas destinée à la CI et à l’équipe plateforme/toolchain est disponible dans `docs/CLIENT_TEAM_PROCEDURE.md`.
 
 ## Dépôt Git et CI
 

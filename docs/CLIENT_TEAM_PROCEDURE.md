@@ -185,7 +185,7 @@ printf '' | qcc -Vgcc_ntoaarch64le -x c++ -E -v - \
   2> "$COMPILER_PROBE_DIR/gcc_ntoaarch64le-cxx.includes.txt"
 ```
 
-Créer ensuite le fichier de variantes attendu par le collecteur, par exemple `compiler-variants.json` ou `qcc-variants.json` selon le projet :
+Créer ensuite le fichier de variantes attendu par CAST, par exemple `compiler-variants.json` ou `qcc-variants.json` selon le projet :
 
 ```json
 {
@@ -298,8 +298,6 @@ CONAN_LOCKFILE(S)
 CONAN_PROFILE(S)
 ```
 
-Les journaux sont expurgés automatiquement par `client_ci_export.py` pour les motifs de type `token=`, `password=`, Bearer et clés privées. Le collecteur CAST effectue un second scan. Un secret détecté côté CAST bloque le mode strict.
-
 Les fichiers `.d` servent de preuve complémentaire. Ils ne remplacent pas la compilation database : ils ne suffisent pas à reproduire l’ordre des includes, les macros et les options spécifiques du compilateur.
 
 ## 10. Générer automatiquement l’identité
@@ -341,7 +339,7 @@ Les noms d’options `--qnx-target`, `--qnx-target-at-build`, `--qcc-probe-dir` 
 
 Le script lit automatiquement `CI_COMMIT_SHA`, `GITHUB_SHA` ou `BUILD_SOURCEVERSION` pour le commit, ainsi que les identifiants de pipeline/job connus. Dans un environnement différent, fournir explicitement `--git-commit`, `--pipeline-id` et `--job-id`.
 
-Le fichier `identity/BUILD_IDENTITY.json` est créé par le script. Le fichier `BUILD_IDENTITY.txt` est ensuite produit par le collecteur CAST dans le package d’analyse.
+Le fichier `identity/BUILD_IDENTITY.json` est créé par le script.
 
 ## 11. Contrôler le contenu du bundle
 
@@ -402,7 +400,6 @@ Le job doit échouer si l’une des deux commandes retourne un code différent d
 - [ ] `conan-graph.json`, `packages.json`, profils et lockfiles sont présents.
 - [ ] Les headers Conan `host` et les headers SDK/toolchain nécessaires sont copiés.
 - [ ] Les `.d` et journaux sont présents si disponibles.
-- [ ] Aucun secret n’est présent dans les journaux transférés.
 - [ ] Le répertoire est archivé sans modification.
 
 ## 14. Diagnostic d’un rejet CAST
@@ -416,7 +413,6 @@ Le job doit échouer si l’une des deux commandes retourne un code différent d
 | `RESPONSE-*` | `.rsp` absent, ambigu ou cyclique | archiver le fichier référencé et vérifier le chemin |
 | `INCLUDE-UNRESOLVED` | `-I`, sysroot ou header hors bundle | ajouter le miroir correspondant, sans modifier la commande |
 | `SOURCE-COVERAGE-INCOMPLETE` | source hors compilation database | exporter le bon périmètre ou corriger la preuve du build |
-| `SEC-SECRET` | secret dans une preuve | expurger à la source et régénérer le bundle |
 
 Ne pas corriger les chemins à la main dans le package CAST. Toute correction doit être faite dans le job client puis suivie d’un nouvel export complet.
 

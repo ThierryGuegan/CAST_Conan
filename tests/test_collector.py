@@ -193,16 +193,16 @@ class CollectorTests(unittest.TestCase):
             qualification = json.loads((package / "qualification.json").read_text())
             self.assertEqual("NOT_QUALIFIED", qualification["status"])
 
-    def test_secret_is_blocking(self):
+    def test_secret_pattern_in_log_is_not_blocking(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "drop"
             valid_fixture(root)
             put(root / "logs" / "build.log", "token=do-not-export-this\n")
             refresh_manifest(root)
             code, package = self.run_collector(root)
-            self.assertEqual(2, code)
-            security = json.loads((package / "security" / "sanitization-report.json").read_text())
-            self.assertEqual(1, security["finding_count"])
+            self.assertEqual(0, code)
+            copied_log = package / "evidence" / "logs" / "build.log"
+            self.assertEqual("token=do-not-export-this\n", copied_log.read_text())
 
     def test_symlink_is_blocking(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -290,16 +290,14 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(0, code)
             self.assertEqual("READY_FOR_ANALYSIS", json.loads((package / "collection-status.json").read_text())["status"])
 
-    def test_client_log_is_redacted_before_transfer(self):
+    def test_client_log_is_copied_without_redaction(self):
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / "build.log"
             destination = Path(temp) / "bundle" / "build.log"
             put(source, "starting\ntoken=super-secret-value\nfinished\n")
-            findings = client_ci_export.copy_redacted_log(source, destination)
-            self.assertEqual(1, findings)
+            client_ci_export.copy_log(source, destination)
             exported = destination.read_text()
-            self.assertNotIn("super-secret-value", exported)
-            self.assertIn("<REDACTED_BY_CLIENT_EXPORT>", exported)
+            self.assertEqual("starting\ntoken=super-secret-value\nfinished\n", exported)
 
     def test_internal_header_symlink_is_materialized(self):
         if not hasattr(os, "symlink"):

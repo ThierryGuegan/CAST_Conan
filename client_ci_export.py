@@ -14,15 +14,6 @@ from pathlib import Path
 
 HEADER_EXTENSIONS = {".h", ".hh", ".hpp", ".hxx", ".inc", ".inl", ".ipp", ".tcc", ".tpp", ".def", ".cfg", ".config"}
 SOURCE_EXTENSIONS = {".c", ".cc", ".cpp", ".cxx", ".c++", ".h", ".hh", ".hpp", ".hxx", ".inc", ".inl", ".ipp", ".tcc", ".tpp", ".def", ".cfg", ".config", ".py"}
-SECRET_PATTERNS = [
-    re.compile(r"(?i)\b(password|passwd|token|secret|api[_-]?key|proxyPassword)\b\s*[:=]\s*[^\s,;]+"),
-    re.compile(r"(?i)\bAuthorization\s*:\s*Bearer\s+\S+"),
-    re.compile(r"(?i)(--password|--token|--secret)\s+\S+"),
-    re.compile(r"(?i)https?://[^\s:/]+:[^@\s]+@"),
-    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
-]
-
-
 def safe_name(value):
     return re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._-") or "item"
 
@@ -98,16 +89,9 @@ def copy_file(source, destination):
     shutil.copy2(source, destination)
 
 
-def copy_redacted_log(source, destination):
-    finding_count = 0
+def copy_log(source, destination):
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with source.open("r", encoding="utf-8", errors="replace") as input_stream, destination.open("w", encoding="utf-8") as output_stream:
-        for line in input_stream:
-            for pattern in SECRET_PATTERNS:
-                line, replacements = pattern.subn("<REDACTED_BY_CLIENT_EXPORT>", line)
-                finding_count += replacements
-            output_stream.write(line)
-    return finding_count
+    shutil.copy2(source, destination)
 
 
 def sha256(path):
@@ -198,9 +182,8 @@ def main(argv=None):
         copy_selected(args.generated.resolve(), bundle / "generated", SOURCE_EXTENSIONS)
     copy_file(args.compile_commands.resolve(), bundle / "compilation" / "compile_commands.json")
     copy_selected(args.build_root.resolve(), bundle / "build", {".d", ".rsp", ".response"})
-    redacted_findings = 0
     for index, log in enumerate(args.build_log, 1):
-        redacted_findings += copy_redacted_log(log.resolve(), bundle / "logs" / f"{index:03d}_{log.name}")
+        copy_log(log.resolve(), bundle / "logs" / f"{index:03d}_{log.name}")
     copy_file(args.conan_graph.resolve(), bundle / "conan" / "conan-graph.json")
     for path in args.conan_lockfile:
         copy_file(path.resolve(), bundle / "conan" / "lockfiles" / path.name)
@@ -231,14 +214,6 @@ def main(argv=None):
         copy_selected(args.qnx_target.resolve(), bundle / "qnx", HEADER_EXTENSIONS)
     if args.qcc_probe_dir:
         copy_selected(args.qcc_probe_dir.resolve(), bundle / "compiler", None)
-
-    security_report = {
-        "schema_version": 1,
-        "build_log_secret_occurrences_redacted": redacted_findings,
-        "raw_build_logs_transferred": False,
-    }
-    report_path = bundle / "identity" / "CLIENT_EXPORT_SECURITY.json"
-    report_path.write_text(json.dumps(security_report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     rows = []
     for path in sorted(item for item in bundle.rglob("*") if item.is_file() and item.name != "FILES.sha256"):
