@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cast-imaging-offline-collector"
 version = "2.1.0"
-description = "Hardened offline evidence collector for CAST Imaging C/C++ analysis"
+description = "Offline deliverables collector for CAST Imaging C/C++ analysis"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = []

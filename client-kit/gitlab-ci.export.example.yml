@@ -1,0 +1,59 @@
+# Exemple GitLab CI à adapter côté client.
+# Le job doit être placé après le build produit et réutiliser ses artefacts.
+
+cast_export_bundle:
+  stage: package
+  image: python:3.11
+  needs:
+    - job: build_product
+      artifacts: true
+  script:
+    - set -eu
+    - mkdir -p "$BUILD_ROOT/cast" "$COMPILER_PROBE_DIR" "$ARTIFACT_DIR"
+    - |
+      conan graph info . \
+        -pr:h "$HOST_PROFILE_FILE" \
+        -pr:b "$BUILD_PROFILE_FILE" \
+        --format=json > "$CONAN_GRAPH_JSON"
+    - |
+      python3 conan2_inventory.py \
+        --graph "$CONAN_GRAPH_JSON" \
+        --output "$CONAN_PACKAGES_JSON"
+    - |
+      set -- \
+        --bundle "$ARTIFACT_DIR/CAST_DELIVERABLES_BUNDLE" \
+        --source "$SRC_ROOT" \
+        --build-root "$BUILD_ROOT" \
+        --compile-commands "$COMPILE_COMMANDS_JSON" \
+        --conan-packages "$CONAN_PACKAGES_JSON" \
+        --conan-graph "$CONAN_GRAPH_JSON" \
+        --application "$APPLICATION" \
+        --application-version "$APPLICATION_VERSION" \
+        --target-label "$TARGET_LABEL" \
+        --target-os "$TARGET_OS" \
+        --target-os-version "$TARGET_OS_VERSION" \
+        --architecture "$TARGET_ARCH" \
+        --build-type "$BUILD_TYPE" \
+        --compiler "$COMPILER" \
+        --compiler-version "$COMPILER_VERSION" \
+        --compiler-variant "$COMPILER_VARIANT" \
+        --conan-version "$CONAN_VERSION" \
+        --host-profile "$HOST_PROFILE" \
+        --build-profile "$BUILD_PROFILE" \
+        --source-root-at-build "$SRC_ROOT" \
+        --generated-root-at-build "$GENERATED_ROOT" \
+        --qnx-target-at-build "$SDK_ROOT" \
+        --matlab-version "$CODE_GENERATOR_VERSION" \
+        --generation-id "$CODE_GENERATION_ID"
+      [ -n "${GENERATED_ROOT:-}" ] && [ -d "$GENERATED_ROOT" ] && set -- "$@" --generated "$GENERATED_ROOT"
+      [ -n "${BUILD_LOG:-}" ] && [ -f "$BUILD_LOG" ] && set -- "$@" --build-log "$BUILD_LOG"
+      [ -n "${CONAN_LOCKFILE:-}" ] && [ -f "$CONAN_LOCKFILE" ] && set -- "$@" --conan-lockfile "$CONAN_LOCKFILE"
+      [ -n "${HOST_PROFILE_FILE:-}" ] && [ -f "$HOST_PROFILE_FILE" ] && set -- "$@" --conan-profile "$HOST_PROFILE_FILE"
+      [ -n "${SDK_ROOT:-}" ] && [ -d "$SDK_ROOT" ] && set -- "$@" --qnx-target "$SDK_ROOT"
+      [ -n "${COMPILER_PROBE_DIR:-}" ] && [ -d "$COMPILER_PROBE_DIR" ] && set -- "$@" --qcc-probe-dir "$COMPILER_PROBE_DIR"
+      python3 client_ci_export.py "$@"
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - build/cast/CAST_DELIVERABLES_BUNDLE/

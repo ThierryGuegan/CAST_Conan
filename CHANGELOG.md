@@ -6,7 +6,7 @@
 - suppression des faux écarts de baseline causés par les chemins temporaires et horodatages ;
 - matérialisation contrôlée des liens symboliques internes aux arbres Conan/QNX ;
 - tests complémentaires de sécurité, baseline et export client ;
-- runbook de production et procédures séparées pour les équipes client et CAST.
+- procédures séparées pour les équipes client et CAST, avec le mode opératoire de production intégré à la procédure CAST.
 
 ## 2.0.0
 

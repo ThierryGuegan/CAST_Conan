@@ -8,6 +8,8 @@ La procédure est exécutée par l’équipe client dans la CI ou tout environne
 
 Les valeurs entre chevrons, par exemple `<APPLICATION>`, `<TARGET_OS>` ou `<COMPILER_VARIANT>`, sont à remplacer par les valeurs du contexte client.
 
+Un mode d’emploi court du kit à transmettre au client est disponible dans `client-kit/README.md`. La fiche `client-kit/CLIENT_CONTEXT_FORM.md` peut accompagner le premier transfert ou tout changement de périmètre.
+
 ## 1. Décision d’architecture
 
 L’équipe CAST ne lance ni Conan, ni l’outil de build, ni le compilateur, et ne reconstruit pas l’application. L’équipe client exécute un export post-build dans le job qui possède déjà le cache Conan, le SDK cible, les profils de build et les résultats de compilation.
@@ -483,4 +485,6 @@ Transmettre à CAST :
 1. l’archive du bundle de livrables, par convention `CAST_DELIVERABLES_BUNDLE` ;
 2. l’identifiant du commit et du pipeline ;
 3. l’application, la cible et le profil Conan.
+
+Le kit client à partager avec l’équipe qui prépare la CI comprend `client-kit/README.md`, `client-kit/CLIENT_CONTEXT_FORM.md`, `client-kit/client-inputs.env.example`, `client-kit/gitlab-ci.export.example.yml`, `client_ci_export.py`, `conan2_inventory.py`, `schemas/` et `examples/`.
 

@@ -58,6 +58,8 @@ CAST_DELIVERABLES_BUNDLE/
 
 Les formats normatifs se trouvent dans `schemas/` et des exemples dans `examples/`.
 
+Un kit de transmission client est disponible dans `client-kit/`. Il contient un mode d’emploi court, un fichier de variables à renseigner et un exemple de job CI.
+
 ## Automatisation côté client
 
 ### 1. Produire les éléments pendant le build
@@ -238,11 +240,11 @@ python3 -m py_compile cast_offline_collector.py client_ci_export.py
 
 Le code utilise uniquement la bibliothèque standard Python 3.9+.
 
-Pour l’exploitation en production, voir également `docs/PRODUCTION_RUNBOOK.md`.
-
 La procédure pas-à-pas destinée à la CI et à l’équipe plateforme/toolchain est disponible dans `docs/CLIENT_TEAM_PROCEDURE.md`.
 
-La procédure opérationnelle destinée aux équipes CAST est disponible dans `docs/CAST_TEAM_PROCEDURE.md`.
+La procédure opérationnelle de production destinée aux équipes CAST est disponible dans `docs/CAST_TEAM_PROCEDURE.md`.
+
+Le mode d’emploi du kit à remettre à l’équipe client est disponible dans `client-kit/README.md`.
 
 ## Dépôt Git et CI
 

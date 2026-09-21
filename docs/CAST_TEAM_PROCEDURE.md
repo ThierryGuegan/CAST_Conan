@@ -2,7 +2,7 @@
 
 Version de procédure : 1.0 — procédure générique pour le collecteur CAST
 
-Cette procédure décrit les actions réalisées par l’équipe CAST après réception d’un bundle de livrables produit par l’équipe client. Elle complète la procédure client et le runbook de production.
+Cette procédure décrit les actions réalisées par l’équipe CAST après réception d’un bundle de livrables produit par l’équipe client. Elle constitue le mode opératoire de production côté CAST.
 
 L’équipe CAST ne lance ni Conan, ni l’outil de build, ni le compilateur, et ne reconstruit pas l’application. Elle exploite uniquement le bundle transféré, exécute le collecteur, configure CAST Imaging à partir du package produit et qualifie le résultat d’analyse.
 
@@ -53,13 +53,16 @@ La procédure de production côté client est décrite dans `docs/CLIENT_TEAM_PR
 
 Avant l’exécution :
 
-1. disposer de Python 3.9+ ;
-2. travailler dans un répertoire dédié ;
-3. utiliser un compte sans privilège ;
-4. vérifier que le transfert du bundle est terminé ;
-5. vérifier la signature ou le contrôle d’intégrité d’entreprise si le processus client en fournit un ;
-6. prévoir un espace disque libre supérieur à deux fois la taille du bundle plus celle du package attendu ;
-7. choisir un répertoire de sortie situé hors du bundle d’entrée.
+1. confirmer que le bundle client a été produit après un build réussi ;
+2. vérifier que le transfert est terminé ;
+3. vérifier la signature ou le contrôle d’intégrité d’entreprise si le processus client en fournit un ;
+4. disposer de Python 3.9+ ;
+5. travailler dans un répertoire dédié ;
+6. utiliser un compte sans privilège ;
+7. prévoir un espace disque libre supérieur à deux fois la taille du bundle plus celle du package attendu ;
+8. choisir un répertoire de sortie situé hors du bundle d’entrée.
+
+Le processus doit être lancé avec un compte sans privilège, dans un répertoire de travail dédié. Le répertoire de sortie ne doit pas se trouver sous le bundle d’entrée.
 
 ## 5. Réception du bundle
 
@@ -155,7 +158,21 @@ Après une première analyse CAST Imaging :
 
 Un résultat sans alerte automatique ne remplace pas la revue humaine. Si les logs montrent des erreurs structurelles, retourner le diagnostic au client pour régénération du bundle.
 
-## 10. Diagnostic et retour client
+## 10. Première mise en service
+
+Pour une première application ou une nouvelle cible :
+
+1. exécuter un pilote sur une première application et une première cible ;
+2. comparer les unités d’analyse aux commandes de compilation d’un échantillon manuel ;
+3. lancer CAST Imaging et fournir les logs dans `cast-analysis-logs/` ;
+4. relancer le collecteur sur le même périmètre ;
+5. obtenir une qualification sans erreur automatique ;
+6. répéter sur chaque application et chaque cible réellement analysée ;
+7. geler la version du collecteur, les schémas et la baseline de référence.
+
+La baseline ne doit pas être créée depuis un package `EXPLORATORY`.
+
+## 11. Diagnostic et retour client
 
 En cas de `NOT_QUALIFIED`, transmettre au client :
 
@@ -177,7 +194,7 @@ Ne pas corriger à la main :
 
 Toute correction doit être faite côté client dans le job d’export, puis livrée dans un nouveau bundle.
 
-## 11. Incident et rollback
+## 12. Incident et rollback
 
 En cas d’incident :
 
@@ -190,7 +207,7 @@ En cas d’incident :
 
 Un package produit ne doit jamais devenir une nouvelle source manuelle de vérité. La source de vérité reste le bundle client et la version du collecteur utilisée.
 
-## 12. Livrables CAST
+## 13. Livrables CAST
 
 À la fin du traitement, conserver :
 
