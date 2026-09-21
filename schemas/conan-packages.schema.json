@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cast-offline:conan-packages:1",
+  "type": "object",
+  "required": ["schema_version", "packages"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["reference", "context", "package_id"],
+        "properties": {
+          "reference": {"type": "string", "minLength": 1},
+          "recipe_revision": {"type": "string"},
+          "context": {"enum": ["host", "build"]},
+          "package_id": {"type": "string", "minLength": 1},
+          "package_revision": {"type": "string"},
+          "original_root": {"type": "string"},
+          "logical_root": {"type": "string"},
+          "exported_root": {"type": "string"}
+        }
+      }
+    }
+  }
+}

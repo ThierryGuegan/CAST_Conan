@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "variants": [
+    {"variant": "gcc_ntoaarch64le", "language": "c", "macros_file": "compiler/gcc_ntoaarch64le-c.macros.txt", "include_search_file": "compiler/gcc_ntoaarch64le-c.includes.txt"},
+    {"variant": "gcc_ntoaarch64le", "language": "c++", "macros_file": "compiler/gcc_ntoaarch64le-cxx.macros.txt", "include_search_file": "compiler/gcc_ntoaarch64le-cxx.includes.txt"}
+  ]
+}

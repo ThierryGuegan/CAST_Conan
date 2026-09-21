@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "packages": [
+    {
+      "reference": "middleware/4.2@company/stable",
+      "recipe_revision": "rrev-sha",
+      "context": "host",
+      "package_id": "package-id-sha",
+      "package_revision": "prev-sha",
+      "original_root": "/conan-cache/p/middleware-package",
+      "logical_root": "conan://middleware/4.2/package-id-sha",
+      "exported_root": ""
+    }
+  ]
+}

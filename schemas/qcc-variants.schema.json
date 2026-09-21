@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cast-offline:qcc-variants:1",
+  "type": "object",
+  "required": ["schema_version", "variants"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["variant", "language", "macros_file", "include_search_file"],
+        "properties": {
+          "variant": {"type": "string", "minLength": 1},
+          "language": {"enum": ["c", "c++"]},
+          "macros_file": {"type": "string", "minLength": 1},
+          "include_search_file": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

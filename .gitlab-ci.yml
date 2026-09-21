@@ -1,0 +1,18 @@
+stages: [test, package]
+
+quality-gate:
+  stage: test
+  image: python:3.9-slim
+  script:
+    - python ci/quality_gate.py
+
+package:
+  stage: package
+  image: python:3.9-slim
+  script:
+    - python tools/release.py
+  artifacts:
+    paths:
+      - dist/*.zip
+      - dist/*.sha256
+  needs: [quality-gate]
