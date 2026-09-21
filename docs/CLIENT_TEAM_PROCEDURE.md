@@ -104,11 +104,10 @@ Ne pas mélanger deux applications, deux cibles, deux architectures, deux varian
 
 1. Exécuter l’export après un build réussi, dans le même job et le même environnement de toolchain.
 2. Ne jamais reconstruire pour CAST avec des options différentes du produit livré.
-3. Ne jamais laisser l’équipe CAST accéder au cache Conan, au SDK client, aux secrets CI ou au réseau de build.
-4. Produire un bundle séparé par cible et par application.
-5. Ne pas modifier le bundle après validation de son contenu par le job CI.
-6. Ne pas remplacer un chemin Conan par une supposition basée sur le nom du dossier.
-7. Conserver le job, le commit, le graphe Conan et le bundle comme un même ensemble de traçabilité.
+3. Produire un bundle séparé par cible et par application.
+4. Ne pas modifier le bundle après validation de son contenu par le job CI.
+5. Ne pas remplacer un chemin Conan par une supposition basée sur le nom du dossier.
+6. Conserver le job, le commit, le graphe Conan et le bundle comme un même ensemble de traçabilité.
 
 ## 7. Préparer les entrées du job
 
