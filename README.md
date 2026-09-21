@@ -1,10 +1,10 @@
-# Collecteur hors ligne CAST Imaging v3 — C/Python, Conan, GCC/QCC
+# Collecteur hors ligne CAST Imaging v3 — C/Python, Conan, toolchains C/C++
 
-Version 2.1.0. Cette version de production met en œuvre les actions P0, P1 et P2 issues de l’audit. Elle remplace le collecteur v1 pour tout usage de référence.
+Version 2.1.0. Cette version de production fournit un flux hors ligne strict pour transformer un bundle de livrables client en package CAST portable.
 
 ## Décision d’architecture
 
-L’équipe CAST ne lance ni Conan, ni Make, ni GCC/QCC et ne reconstruit pas les applications. L’équipe client exécute seulement un export post-build dans le job qui possède déjà le cache Conan, le SDK cible et les résultats de compilation. Le collecteur CAST travaille ensuite exclusivement sur le bundle de livrables transféré.
+L’équipe CAST ne lance ni Conan, ni l’outil de build, ni le compilateur, et ne reconstruit pas les applications. L’équipe client exécute seulement un export post-build dans le job qui possède déjà le cache Conan, le SDK cible et les résultats de compilation. Le collecteur CAST travaille ensuite exclusivement sur le bundle de livrables transféré.
 
 ```mermaid
 flowchart TD
@@ -17,14 +17,14 @@ flowchart TD
     A --> Q["Qualification des logs et dérive"]
 ```
 
-Cette approche ne dépend pas de `CPP Compilation Database Discoverer`. Le `compile_commands.json` est une preuve produite par le client ; le collecteur le transforme en profils et en plan de configuration lisibles par l’équipe CAST.
+Cette approche ne dépend pas de `CPP Compilation Database Discoverer`. Le `compile_commands.json` est un élément de traçabilité produit par le client ; le collecteur le transforme en profils et en plan de configuration lisibles par l’équipe CAST.
 
 ## Répartition des responsabilités
 
 | Activité | Équipe client | Équipe CAST |
 |---|---:|---:|
-| Compiler et exécuter Conan/QCC | Oui | Non |
-| Produire identité, graphe, inventaire exact et probes QCC | Oui, dans la CI | Non |
+| Compiler et exécuter Conan et la toolchain | Oui | Non |
+| Produire identité, graphe, inventaire exact et probes compilateur | Oui, dans la CI | Non |
 | Exporter les en-têtes Conan host et SDK/toolchain | Automatique via `client_ci_export.py` | Non |
 | Exécuter le collecteur | Non | Oui |
 | Décider READY/NOT_QUALIFIED | Non | Automatique puis revue CAST |
@@ -60,7 +60,7 @@ Les formats normatifs se trouvent dans `schemas/` et des exemples dans `examples
 
 ## Automatisation côté client
 
-### 1. Produire les preuves pendant le build
+### 1. Produire les éléments pendant le build
 
 Le job client conserve le `compile_commands.json` déjà généré par CMake, Bear, une instrumentation interne ou la CI. S’il existe déjà, aucune nouvelle compilation n’est nécessaire. À défaut, le client doit produire `compilation/compilation-units.json` avec les mêmes champs `directory`, `file` et `arguments`. Un journal seul ou des `.d` seuls ne reconstituent pas de façon fiable les macros, l’ordre des `-I` et les response files ; ils ne qualifient donc pas un passage strict.
 
@@ -116,7 +116,7 @@ python3 client_ci_export.py \
   --conan-profile "$CI_PROJECT_DIR/profiles/qnx-arm64" \
   --qnx-target "$QNX_TARGET" \
   --qcc-probe-dir "$CI_PROJECT_DIR/build/cast/compiler" \
-  --application Application-A \
+  --application "<APPLICATION>" \
   --application-version 2026.09 \
   --target-label qnx-arm64-release \
   --target-os QNX --target-os-version 7.1 \
@@ -167,7 +167,7 @@ Attention à la casse : `-I` majuscule ajoute un répertoire d’inclusion ; `-D
 | `-include`, `-imacros` | Fichier remappé, existence obligatoire, puis intégré au force-include |
 | `--sysroot`, `-isysroot`, chemins `=...` | Résolus par commande avant remapping vers le miroir QNX |
 | `-Wp,...`, `-Xpreprocessor` | Dépliées pour retrouver les options du préprocesseur |
-| `-M`, `-MM`, `-MD`, `-MMD`, `-MF`, `-MT`, `-MQ`, `-MP`, `-MG` | Conservées comme preuves ; les `.d` sont parsés séparément |
+| `-M`, `-MM`, `-MD`, `-MMD`, `-MF`, `-MT`, `-MQ`, `-MP`, `-MG` | Conservées comme éléments de traçabilité ; les `.d` sont parsés séparément |
 | `-dM`, `-dD`, `-dN`, `-dI`, `-dU` | Répertoriées comme options de dump ; jamais confondues avec `-D` |
 | `@fichier.rsp` | Déplié récursivement, profondeur limitée ; absence, ambiguïté ou cycle = blocage |
 | `-V...` QCC | Relié obligatoirement au probe macro/include correspondant |
@@ -196,7 +196,7 @@ flowchart LR
     P --> D["Macros / undef / force-include"]
 ```
 
-Les chemins absolus d’origine ne sont jamais demandés à la machine CAST. Le remapping utilise trois espaces logiques : `source://`, `conan://` et `qnx://`. Les chemins opérationnels dans `analysis-units.json` sont relatifs au package ; `path-remapping.csv` garde la preuve de chaque conversion. Toute entrée non remappée est bloquante et figure dans `unresolved-paths.txt`.
+Les chemins absolus d’origine ne sont jamais demandés à la machine CAST. Le remapping utilise trois espaces logiques : `source://`, `conan://` et `qnx://`. Les chemins opérationnels dans `analysis-units.json` sont relatifs au package ; `path-remapping.csv` garde la trace de chaque conversion. Toute entrée non remappée est bloquante et figure dans `unresolved-paths.txt`.
 
 Les intitulés précis des écrans peuvent varier avec le niveau de maintenance d’Imaging v3. `CAST_ANALYSIS_PLAN.md` est donc la spécification d’entrée à appliquer, puis à contrôler via les logs d’analyse.
 
@@ -207,7 +207,7 @@ Les intitulés précis des écrans peuvent varier avec le niveau de maintenance 
 | `collection-status.json` | Verdict machine : `READY_FOR_ANALYSIS`, `NOT_QUALIFIED` ou `EXPLORATORY` |
 | `collection-report.json` | Anomalies, compteurs, couverture et synthèse |
 | `cast-config/analysis-units.json` | Configuration portable par profil |
-| `cast-config/path-remapping.csv` | Preuve chemin original → chemin collecté |
+| `cast-config/path-remapping.csv` | Trace chemin original → chemin collecté |
 | `cast-config/source-coverage-summary.json` | Couverture des sources C/C++ collectées par une commande réelle |
 | `cast-config/baseline-diff.json` | Dérive identité/Conan/profils par rapport à un précédent package |
 | `qualification.json` | Indicateurs extraits des logs CAST éventuellement fournis |
@@ -238,9 +238,11 @@ python3 -m py_compile cast_offline_collector.py client_ci_export.py
 
 Le code utilise uniquement la bibliothèque standard Python 3.9+.
 
-Pour l’exploitation en production, voir également `docs/PRODUCTION_RUNBOOK.md`, `docs/THREAT_MODEL.md` et `RELEASE_CHECKLIST.md`.
+Pour l’exploitation en production, voir également `docs/PRODUCTION_RUNBOOK.md`.
 
 La procédure pas-à-pas destinée à la CI et à l’équipe plateforme/toolchain est disponible dans `docs/CLIENT_TEAM_PROCEDURE.md`.
+
+La procédure opérationnelle destinée aux équipes CAST est disponible dans `docs/CAST_TEAM_PROCEDURE.md`.
 
 ## Dépôt Git et CI
 

@@ -8,7 +8,81 @@ La procédure est exécutée par l’équipe client dans la CI ou tout environne
 
 Les valeurs entre chevrons, par exemple `<APPLICATION>`, `<TARGET_OS>` ou `<COMPILER_VARIANT>`, sont à remplacer par les valeurs du contexte client.
 
-## 1. Objectif et résultat attendu
+## 1. Décision d’architecture
+
+L’équipe CAST ne lance ni Conan, ni l’outil de build, ni le compilateur, et ne reconstruit pas l’application. L’équipe client exécute un export post-build dans le job qui possède déjà le cache Conan, le SDK cible, les profils de build et les résultats de compilation.
+
+Le collecteur CAST travaille ensuite exclusivement sur le bundle de livrables transféré.
+
+```mermaid
+flowchart TD
+    C["CI client : build normal"] --> E["Export post-build automatisé"]
+    E --> B["CAST_DELIVERABLES_BUNDLE"]
+    B --> G{"Collecteur CAST strict"}
+    G -->|bloquant| N["NOT_QUALIFIED"]
+    G -->|conforme| P["Package CAST portable"]
+    P --> A["Analyse CAST par profils"]
+    A --> Q["Qualification des logs et dérive"]
+```
+
+Cette approche ne dépend pas de `CPP Compilation Database Discoverer`. Le `compile_commands.json` est un élément de traçabilité produit par le client ; le collecteur le transforme en profils et en plan de configuration lisibles par l’équipe CAST.
+
+## 2. Répartition des responsabilités
+
+| Activité | Équipe client | Équipe CAST |
+|---|---:|---:|
+| Build normal et tests produit | Oui | Non |
+| Résolution Conan et accès au cache local | Oui | Non |
+| Production de l’identité, du graphe Conan, des package IDs et des chemins | Oui | Non |
+| Production de `compile_commands.json` | Oui | Non |
+| Production des probes compilateur | Oui | Non |
+| Export des en-têtes Conan `host` et SDK/toolchain | Oui, automatisé | Non |
+| Génération de `BUILD_IDENTITY.json` | Oui, automatisée | Vérification |
+| Configuration CAST Imaging | Non | Oui |
+| Correction d’un bundle rejeté | Oui | Diagnostic |
+
+## 3. Contenu client obligatoire
+
+Le bundle de livrables remis à CAST doit contenir au minimum :
+
+```text
+CAST_DELIVERABLES_BUNDLE/
+├── identity/BUILD_IDENTITY.json
+├── source/
+├── generated/                         # si code généré séparé
+├── compilation/compile_commands.json  # ou compilation-units.json
+├── build/*.d                          # recommandé ; absence = avertissement
+├── build/*.rsp                        # si référencés par une commande
+├── logs/                              # journaux de build transférés tels que fournis
+├── conan/
+│   ├── packages.json
+│   ├── conan-graph.json
+│   ├── export/<package-host>/...
+│   ├── profiles/
+│   └── lockfiles/
+├── compiler/
+│   ├── qcc-variants.json              # ou fichier équivalent attendu par CAST
+│   ├── *.macros.txt
+│   └── *.includes.txt
+└── qnx/                               # miroir des en-têtes SDK/sysroot, si applicable
+```
+
+Les formats normatifs se trouvent dans `schemas/` et des exemples dans `examples/`.
+
+## 4. Automatisation côté client
+
+L’automatisation côté client doit suivre ce principe : produire les éléments nécessaires pendant le build qualifié, puis exporter les livrables sans relancer Conan, le build ou le compilateur pour CAST.
+
+Le job client doit notamment :
+
+1. conserver ou produire `compile_commands.json` dans le contexte du build qualifié ;
+2. produire les probes compilateur pour chaque variante et langage réellement utilisés ;
+3. produire l’inventaire Conan exact depuis le graphe du build ;
+4. exporter les en-têtes Conan `host` et les en-têtes SDK/toolchain nécessaires ;
+5. générer `identity/BUILD_IDENTITY.json` avec les métadonnées du build ;
+6. archiver le bundle de livrables après contrôle de son contenu.
+
+## 5. Objectif et résultat attendu
 
 À la fin du job, la CI doit déposer un répertoire autonome :
 
@@ -26,20 +100,7 @@ application × commit × cible × architecture × build_type × profil Conan × 
 
 Ne pas mélanger deux applications, deux cibles, deux architectures, deux variantes de compilateur ou deux profils Conan dans un même bundle.
 
-## 2. Responsabilités
-
-| Activité | Équipe client | Équipe CAST |
-|---|---:|---:|
-| Build normal et tests produit | Oui | Non |
-| Résolution Conan et accès au cache local | Oui | Non |
-| Production du graphe, package IDs et chemins | Oui | Non |
-| Production de `compile_commands.json` | Oui | Non |
-| Export des en-têtes Conan et SDK/toolchain | Oui, automatisé | Non |
-| Génération de `BUILD_IDENTITY.json` | Oui, automatisée | Vérification |
-| Configuration CAST Imaging | Non | Oui |
-| Correction d’un bundle rejeté | Oui | Diagnostic |
-
-## 3. Règles impératives
+## 6. Règles impératives
 
 1. Exécuter l’export après un build réussi, dans le même job et le même environnement de toolchain.
 2. Ne jamais reconstruire pour CAST avec des options différentes du produit livré.
@@ -47,9 +108,9 @@ Ne pas mélanger deux applications, deux cibles, deux architectures, deux varian
 4. Produire un bundle séparé par cible et par application.
 5. Ne pas modifier le bundle après validation de son contenu par le job CI.
 6. Ne pas remplacer un chemin Conan par une supposition basée sur le nom du dossier.
-7. Conserver le job, le commit, le graphe Conan et le bundle comme un même ensemble de preuve.
+7. Conserver le job, le commit, le graphe Conan et le bundle comme un même ensemble de traçabilité.
 
-## 4. Préparer les entrées du job
+## 7. Préparer les entrées du job
 
 Avant de lancer `client_ci_export.py`, vérifier que le job dispose de :
 
@@ -66,7 +127,7 @@ COMPILER_PROBE_DIR                probes macros/includes par compilateur, varian
 
 Le dossier source doit être limité au périmètre de l’application et de la cible. Si le dépôt contient plusieurs applications ou plusieurs produits, filtrer avant l’export afin que la vérification de couverture à 100 % soit significative.
 
-## 5. Produire `compile_commands.json`
+## 8. Produire `compile_commands.json`
 
 Le fichier doit contenir une entrée par source réellement compilée, avec au minimum :
 
@@ -84,7 +145,7 @@ Les champs `arguments` sont préférés à `command`, car ils évitent une nouve
 
 Le fichier doit être produit pendant le build qualifié, pas reconstruit après coup avec une configuration différente.
 
-### 5.1 Avec CMake
+### 8.1 Avec CMake
 
 Si le build utilise CMake avec Makefiles ou Ninja, activer l’export de la compilation database dans la configuration :
 
@@ -104,7 +165,7 @@ $BUILD_ROOT/compile_commands.json
 
 Vérifier qu’il correspond bien à la cible livrée et qu’il n’a pas été généré depuis une configuration de développement différente.
 
-### 5.2 Avec un build Make, Ninja ou script propriétaire
+### 8.2 Avec un build Make, Ninja ou script propriétaire
 
 Si le build ne produit pas nativement `compile_commands.json`, l’équipe client doit instrumenter le build existant pour capturer les commandes réelles de compilation. Utiliser l’outil déjà validé dans l’environnement client, par exemple Bear, intercept-build ou un mécanisme interne de CI.
 
@@ -124,7 +185,7 @@ intercept-build --cdb "$BUILD_ROOT/compile_commands.json" \
 
 La commande instrumentée doit être la commande de build produit habituelle. Ne pas simplifier les options, changer de profil Conan, changer de cible ou remplacer le compilateur.
 
-### 5.3 Avec une compilation database interne
+### 8.3 Avec une compilation database interne
 
 Si la CI produit déjà un inventaire structuré des unités compilées, exporter ce contenu au format `compile_commands.json`. Chaque entrée doit contenir :
 
@@ -146,7 +207,7 @@ Contrôles client :
 
 Si le build utilise déjà un `compile_commands.json`, le réutiliser. Il ne faut pas relancer une compilation uniquement pour CAST.
 
-## 6. Produire les probes compilateur
+## 9. Produire les probes compilateur
 
 Pour chaque couple réellement utilisé `(compilateur, variante, langage)`, produire les fichiers de macros et de chemins d’inclusion implicites dans `COMPILER_PROBE_DIR`.
 
@@ -209,7 +270,7 @@ Créer ensuite le fichier de variantes attendu par CAST, par exemple `compiler-v
 
 Conserver le nom attendu par les scripts du projet. Si le dépôt fournit uniquement le schéma `qcc-variants.json`, l’utiliser comme fichier de description des variantes compilateur, même lorsque la procédure est appliquée à un contexte plus large.
 
-## 7. Produire l’inventaire Conan exact
+## 10. Produire l’inventaire Conan exact
 
 ### Conan 2
 
@@ -270,7 +331,7 @@ Règles :
 - inclure RREV et PREV lorsqu’ils existent ;
 - conserver le graphe brut et le lockfile dans le bundle.
 
-## 8. Collecter les headers Conan et SDK/toolchain
+## 11. Collecter les headers Conan et SDK/toolchain
 
 `client_ci_export.py` copie automatiquement :
 
@@ -284,7 +345,7 @@ Ne pas copier tout le cache Conan. Ne pas copier les packages `build` dans les d
 
 Si le contexte n’utilise pas de SDK externe, le dossier correspondant peut être absent. Cette absence doit être cohérente avec les chemins présents dans `compile_commands.json`.
 
-## 9. Collecter les journaux et dépendances
+## 12. Collecter les journaux et dépendances
 
 Le job doit conserver :
 
@@ -298,9 +359,9 @@ CONAN_LOCKFILE(S)
 CONAN_PROFILE(S)
 ```
 
-Les fichiers `.d` servent de preuve complémentaire. Ils ne remplacent pas la compilation database : ils ne suffisent pas à reproduire l’ordre des includes, les macros et les options spécifiques du compilateur.
+Les fichiers `.d` servent d’éléments de traçabilité complémentaires. Ils ne remplacent pas la compilation database : ils ne suffisent pas à reproduire l’ordre des includes, les macros et les options spécifiques du compilateur.
 
-## 10. Générer automatiquement l’identité
+## 13. Générer automatiquement l’identité
 
 Lancer `client_ci_export.py` avec les métadonnées du build :
 
@@ -341,7 +402,7 @@ Le script lit automatiquement `CI_COMMIT_SHA`, `GITHUB_SHA` ou `BUILD_SOURCEVERS
 
 Le fichier `identity/BUILD_IDENTITY.json` est créé par le script.
 
-## 11. Contrôler le contenu du bundle
+## 14. Contrôler le contenu du bundle
 
 Après l’exécution de `client_ci_export.py`, le job doit vérifier que le contenu attendu est présent avant archivage :
 
@@ -353,7 +414,7 @@ Après l’exécution de `client_ci_export.py`, le job doit vérifier que le con
 
 Archiver ensuite le dossier sans modification manuelle.
 
-## 12. Exemple de job CI complet
+## 15. Exemple de job CI complet
 
 ```sh
 set -eu
@@ -389,7 +450,7 @@ python3 client_ci_export.py \
 
 Le job doit échouer si l’une des deux commandes retourne un code différent de zéro.
 
-## 13. Checklist avant transfert
+## 16. Liste de contrôle avant transfert
 
 - [ ] Le build de l’application est terminé avec succès.
 - [ ] Le bundle correspond à une seule application et une seule cible.
@@ -402,7 +463,7 @@ Le job doit échouer si l’une des deux commandes retourne un code différent d
 - [ ] Les `.d` et journaux sont présents si disponibles.
 - [ ] Le répertoire est archivé sans modification.
 
-## 14. Diagnostic d’un rejet CAST
+## 17. Diagnostic d’un rejet CAST
 
 | Code de rejet | Cause probable | Correction côté client |
 |---|---|---|
@@ -412,11 +473,11 @@ Le job doit échouer si l’une des deux commandes retourne un code différent d
 | `QCC-PROBE-*` ou `COMPILER-PROBE-*` | variante ou fichier de probe manquant | produire le probe dans la même toolchain |
 | `RESPONSE-*` | `.rsp` absent, ambigu ou cyclique | archiver le fichier référencé et vérifier le chemin |
 | `INCLUDE-UNRESOLVED` | `-I`, sysroot ou header hors bundle | ajouter le miroir correspondant, sans modifier la commande |
-| `SOURCE-COVERAGE-INCOMPLETE` | source hors compilation database | exporter le bon périmètre ou corriger la preuve du build |
+| `SOURCE-COVERAGE-INCOMPLETE` | source hors compilation database | exporter le bon périmètre ou corriger la traçabilité du build |
 
 Ne pas corriger les chemins à la main dans le package CAST. Toute correction doit être faite dans le job client puis suivie d’un nouvel export complet.
 
-## 15. Transfert à CAST
+## 18. Transfert à CAST
 
 Transmettre à CAST :
 

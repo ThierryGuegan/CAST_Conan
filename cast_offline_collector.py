@@ -249,62 +249,6 @@ def load_identity(raw_root: Path, audit: Audit) -> Tuple[Dict[str, str], Dict[st
     return metadata, structured
 
 
-def parse_sha256_manifest(path: Path) -> Dict[str, str]:
-    values: Dict[str, str] = {}
-    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        match = re.match(r"^([0-9a-fA-F]{64})\s+[* ]?(.+)$", line)
-        if match:
-            values[match.group(2).strip()] = match.group(1).lower()
-    return values
-
-
-def verify_input_manifest(raw_root: Path, audit: Audit) -> Dict[str, Any]:
-    candidates = [raw_root / "FILES.sha256", raw_root / "identity" / "FILES.sha256"]
-    manifest = next((path for path in candidates if path.exists()), None)
-    result: Dict[str, Any] = {"manifest": "", "listed": 0, "verified": 0, "missing": [], "mismatched": [], "unlisted": []}
-    if manifest is None:
-        audit.critical("MANIFEST-MISSING", "FILES.sha256 is required")
-        return result
-    result["manifest"] = str(manifest.relative_to(raw_root))
-    entries = parse_sha256_manifest(manifest)
-    nonempty_lines = [line for line in manifest.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
-    if len(nonempty_lines) != len(entries):
-        audit.critical("MANIFEST-SYNTAX", "FILES.sha256 contains malformed or duplicate entries", result["manifest"])
-    result["listed"] = len(entries)
-    if not entries:
-        audit.critical("MANIFEST-EMPTY", "FILES.sha256 contains no valid entries", result["manifest"])
-        return result
-    for relative, expected in entries.items():
-        path = safe_input_path(raw_root, relative, audit, "MANIFEST-PATH")
-        if path is None:
-            continue
-        if not path.is_file() or path.is_symlink():
-            result["missing"].append(relative)
-            audit.critical("MANIFEST-MISSING-FILE", "Manifest entry is missing or is not a regular file", relative)
-            continue
-        actual = sha256(path)
-        if actual != expected:
-            result["mismatched"].append(relative)
-            audit.critical("MANIFEST-HASH", "Input file hash does not match FILES.sha256", relative)
-        else:
-            result["verified"] += 1
-    listed = set(entries)
-    manifest_rel = manifest.relative_to(raw_root).as_posix()
-    actual_files = set()
-    for path in raw_root.rglob("*"):
-        if path.is_file() and not path.is_symlink():
-            rel = path.relative_to(raw_root).as_posix()
-            if rel != manifest_rel:
-                actual_files.add(rel)
-    result["unlisted"] = sorted(actual_files - listed)
-    if result["unlisted"]:
-        audit.critical("MANIFEST-UNLISTED", f"{len(result['unlisted'])} input files are not listed in FILES.sha256")
-    return result
-
-
 def copy_tree_safe(source: Path, destination: Path, predicate=None) -> Tuple[int, int]:
     copied = 0
     skipped = 0
@@ -1247,7 +1191,7 @@ def write_audit_outputs(package_root: Path, audit: Audit, summary: Dict[str, Any
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Create a hardened CAST package without executing build tools.")
-    parser.add_argument("--input-root", required=True, type=Path, help="Client-provided CAST_EVIDENCE_BUNDLE")
+    parser.add_argument("--input-root", required=True, type=Path, help="Client-provided CAST_DELIVERABLES_BUNDLE")
     parser.add_argument("--output-parent", required=True, type=Path, help="Parent directory for generated packages")
     parser.add_argument("--application", help="Override application name")
     parser.add_argument("--target", help="Override target label")
@@ -1282,12 +1226,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "input_statistics": input_stats,
     }
     write_identity(metadata, structured_identity, package_root)
-    manifest_result = verify_input_manifest(raw_root, audit)
-    write_json(package_root / "evidence" / "input-manifest-verification.json", manifest_result)
-    if (raw_root / "FILES.sha256").is_file():
-        shutil.copy2(raw_root / "FILES.sha256", package_root / "evidence" / "CLIENT_FILES.sha256")
-    elif (raw_root / "identity" / "FILES.sha256").is_file():
-        shutil.copy2(raw_root / "identity" / "FILES.sha256", package_root / "evidence" / "CLIENT_FILES.sha256")
     mappings: List[Dict[str, str]] = []
     source_root = raw_root / "source"
     generated_root = raw_root / "generated"

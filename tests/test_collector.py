@@ -1,4 +1,3 @@
-import hashlib
 import json
 import os
 import sys
@@ -22,13 +21,6 @@ def put(path, content):
     else:
         path.write_text(content, encoding="utf-8")
 
-
-def refresh_manifest(root):
-    rows = []
-    for path in sorted(item for item in root.rglob("*") if item.is_file() and item.name != "FILES.sha256" and not item.is_symlink()):
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        rows.append(f"{digest}  {path.relative_to(root).as_posix()}")
-    put(root / "FILES.sha256", "\n".join(rows) + "\n")
 
 
 def valid_fixture(root, two_profiles=False):
@@ -83,7 +75,6 @@ def valid_fixture(root, two_profiles=False):
             "arguments": ["qcc", "-Vgcc_ntoaarch64le", "-I/cache/dep/include", "--sysroot=/opt/qnx/target/qnx7", "-isystem", "=/usr/include", "-DMODE=2", "-c", "/src/second.c"],
         })
     put(root / "compilation" / "compile_commands.json", entries)
-    refresh_manifest(root)
 
 
 class CollectorTests(unittest.TestCase):
@@ -129,7 +120,6 @@ class CollectorTests(unittest.TestCase):
             data = json.loads(path.read_text())
             data["packages"].append(dict(data["packages"][0]))
             put(path, data)
-            refresh_manifest(root)
             code, package = self.run_collector(root)
             self.assertEqual(2, code)
             self.assertEqual("NOT_QUALIFIED", json.loads((package / "collection-status.json").read_text())["status"])
@@ -142,7 +132,6 @@ class CollectorTests(unittest.TestCase):
             data = json.loads(path.read_text())
             data[0]["arguments"].append("@missing.rsp")
             put(path, data)
-            refresh_manifest(root)
             code, _ = self.run_collector(root)
             self.assertEqual(2, code)
 
@@ -155,7 +144,6 @@ class CollectorTests(unittest.TestCase):
             data = json.loads(database.read_text())
             data[0]["arguments"] = ["qcc", "@flags.rsp"]
             put(database, data)
-            refresh_manifest(root)
             code, package = self.run_collector(root)
             self.assertEqual(0, code)
             records = json.loads((package / "cast-config" / "compiler-invocations.json").read_text())
@@ -176,7 +164,6 @@ class CollectorTests(unittest.TestCase):
             root = Path(temp) / "drop"
             valid_fixture(root)
             put(root / "source" / "unrepresented.c", "int not_in_target(void){return 0;}\n")
-            refresh_manifest(root)
             code, package = self.run_collector(root)
             self.assertEqual(2, code)
             coverage = json.loads((package / "cast-config" / "source-coverage-summary.json").read_text())
@@ -187,7 +174,6 @@ class CollectorTests(unittest.TestCase):
             root = Path(temp) / "drop"
             valid_fixture(root)
             put(root / "cast-analysis-logs" / "analysis.log", "No such file or directory: dep_missing.h\n")
-            refresh_manifest(root)
             code, package = self.run_collector(root)
             self.assertEqual(2, code)
             qualification = json.loads((package / "qualification.json").read_text())
@@ -198,7 +184,6 @@ class CollectorTests(unittest.TestCase):
             root = Path(temp) / "drop"
             valid_fixture(root)
             put(root / "logs" / "build.log", "token=do-not-export-this\n")
-            refresh_manifest(root)
             code, package = self.run_collector(root)
             self.assertEqual(0, code)
             copied_log = package / "evidence" / "logs" / "build.log"
@@ -334,3 +319,4 @@ class CollectorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

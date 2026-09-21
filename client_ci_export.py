@@ -2,7 +2,6 @@
 """Client-side post-build exporter. It never launches Conan or a compiler."""
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -94,14 +93,6 @@ def copy_log(source, destination):
     shutil.copy2(source, destination)
 
 
-def sha256(path):
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def environment_value(explicit, *names):
     if explicit:
         return explicit
@@ -112,7 +103,7 @@ def environment_value(explicit, *names):
 
 
 def parser():
-    result = argparse.ArgumentParser(description="Prepare CAST_EVIDENCE_BUNDLE after a successful client build.")
+    result = argparse.ArgumentParser(description="Prepare CAST_DELIVERABLES_BUNDLE after a successful client build.")
     result.add_argument("--bundle", required=True, type=Path)
     result.add_argument("--source", required=True, type=Path)
     result.add_argument("--generated", type=Path)
@@ -215,11 +206,8 @@ def main(argv=None):
     if args.qcc_probe_dir:
         copy_selected(args.qcc_probe_dir.resolve(), bundle / "compiler", None)
 
-    rows = []
-    for path in sorted(item for item in bundle.rglob("*") if item.is_file() and item.name != "FILES.sha256"):
-        rows.append(f"{sha256(path)}  {path.relative_to(bundle).as_posix()}")
-    (bundle / "FILES.sha256").write_text("\n".join(rows) + "\n", encoding="utf-8")
-    print(json.dumps({"bundle": str(bundle), "files": len(rows), "status": "READY_FOR_TRANSFER"}, indent=2))
+    file_count = sum(1 for item in bundle.rglob("*") if item.is_file())
+    print(json.dumps({"bundle": str(bundle), "files": file_count, "status": "READY_FOR_TRANSFER"}, indent=2))
     return 0
 
 
