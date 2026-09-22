@@ -6,7 +6,10 @@
 - suppression des faux écarts de baseline causés par les chemins temporaires et horodatages ;
 - matérialisation contrôlée des liens symboliques internes aux arbres Conan/QNX ;
 - tests complémentaires de sécurité, baseline et export client ;
-- procédures séparées pour les équipes client et CAST, avec le mode opératoire de production intégré à la procédure CAST.
+- procédures séparées pour les équipes client et CAST, avec le mode opératoire de production intégré à la procédure CAST ;
+- variante locale dédiée aux clients fournissant des makefiles modifiés ;
+- audit dédié des archives de build brutes reçues hors staging complet ;
+- récupération partielle depuis les traces CMake/Conan lorsque le staging complet ne peut pas être régénéré.
 
 ## 2.0.0
 

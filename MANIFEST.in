@@ -1,6 +1,7 @@
 include README.md CHANGELOG.md
 recursive-include docs *.md
 recursive-include client-kit *.md *.example *.yml
+recursive-include client-kit-modified-makefiles *.md
 recursive-include schemas *.json
 recursive-include examples *.json
 recursive-include tests *.py

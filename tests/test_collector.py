@@ -12,6 +12,9 @@ sys.path.insert(0, str(ROOT))
 import cast_offline_collector as collector
 import client_ci_export
 import conan2_inventory
+import makefile_local_audit
+import makefile_local_export
+import makefile_local_recover
 
 
 def put(path, content):
@@ -282,6 +285,115 @@ class CollectorTests(unittest.TestCase):
             code, package = self.run_collector(bundle)
             self.assertEqual(0, code)
             self.assertEqual("READY_FOR_ANALYSIS", json.loads((package / "collection-status.json").read_text())["status"])
+
+    def test_makefile_local_export_then_cast_collection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            staged = base / "staging"
+            bundle = base / "CAST_DELIVERABLES_BUNDLE"
+            valid_fixture(staged)
+            code = makefile_local_export.main([
+                "--staged-root", str(staged),
+                "--bundle", str(bundle),
+            ])
+            self.assertEqual(0, code)
+            code, package = self.run_collector(bundle)
+            self.assertEqual(0, code)
+            self.assertEqual("READY_FOR_ANALYSIS", json.loads((package / "collection-status.json").read_text())["status"])
+
+    def test_makefile_local_audit_flags_raw_cmake_build_tree(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "LCCS_Archive_CAST"
+            put(root / "App" / "build" / "CMakeCache.txt", "CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=\n")
+            put(root / "App" / "build" / "CMakeFiles" / "App.dir" / "flags.make", "C_DEFINES = -DDEBUG\n")
+            put(root / "App" / "build" / "CMakeFiles" / "App.dir" / "build.make", "App.o: src/App.c\n")
+            put(root / "App" / "build" / "CMakeFiles" / "App.dir" / "src" / "App.c.o.d", "App.o: src/App.c include/App.h\n")
+            put(root / "App" / "build" / "conanbuildinfo.txt", "[requires]\ndep/1.0\n")
+            report = makefile_local_audit.audit(makefile_local_audit.snapshot_from_root(root))
+            self.assertEqual("DIAGNOSTIC_ONLY", report["status"])
+            self.assertIn("compile database", report["missing"])
+            self.assertIn("compiler macros probes", report["missing"])
+            self.assertTrue(any("CMAKE_EXPORT_COMPILE_COMMANDS" in warning for warning in report["warnings"]))
+
+    def test_makefile_local_recover_creates_partial_artifacts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "LCCS_Archive_CAST"
+            app = root / "App"
+            output = base / "recovered"
+            put(app / "src" / "App.c", "int app(void){return 0;}\n")
+            put(app / "include" / "App.h", "#pragma once\n")
+            put(root / ".conan" / "data" / "dep" / "1.0" / "_" / "_" / "package" / "abc123" / "include" / "dep.h", "#pragma once\n")
+            put(app / "build" / "CMakeFiles" / "App.dir" / "flags.make", "C_DEFINES = -DDEBUG\nC_INCLUDES = -IC:/cache/dep/include\nC_FLAGS = -Vgcc_ntoarmv7le -g\n")
+            put(
+                app / "build" / "CMakeFiles" / "App.dir" / "build.make",
+                "CMAKE_SOURCE_DIR = C:/work/App\n"
+                "CMAKE_BINARY_DIR = C:/work/App/build\n"
+                "\tC:/qnx/usr/bin/myCMakeQCC.bat $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT App.o -MF App.o.d -o App.o -c C:/work/App/src/App.c\n",
+            )
+            put(app / "build" / "CMakeFiles" / "App.dir" / "src" / "App.c.o.d", "App.o: C:/work/App/src/App.c C:/cache/dep/include/dep.h\n")
+            put(app / "build" / "conaninfo.txt", "[full_requires]\n    dep/1.0:abc123\n")
+            put(app / "build" / "conanbuildinfo.txt", "[rootpath_dep]\nC:/cache/.conan/data/dep/1.0/_/_/package/abc123\n")
+            code = makefile_local_recover.main(["--root", str(root), "--output", str(output)])
+            self.assertEqual(2, code)
+            commands = json.loads((output / "compilation" / "compile_commands.json").read_text())
+            self.assertEqual(1, len(commands))
+            self.assertIn("-DDEBUG", commands[0]["arguments"])
+            packages = json.loads((output / "conan" / "packages.recovered.json").read_text())["packages"]
+            self.assertEqual("dep/1.0", packages[0]["reference"])
+            report = json.loads((output / "recovery-report.json").read_text())
+            self.assertEqual("RECOVERED_PARTIAL", report["status"])
+            self.assertEqual(["App"], report["applications_detected"])
+            self.assertEqual(2, report["copied_source_files"])
+
+    def test_makefile_local_recover_filters_one_application(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "LCCS_Archive_CAST"
+            output = base / "recovered"
+            put(root / "EQT_SP_CAN" / "build" / "CMakeFiles" / "EQT_SP_CAN.dir" / "build.make", "")
+            put(root / "EQT_SP_CAN" / "build" / "CMakeFiles" / "EQT_SP_CAN.dir" / "flags.make", "")
+            put(root / "EQT_SP_CAN" / "build" / "CMakeFiles" / "EQT_SP_CAN.dir" / "src" / "App.c.o.d", "")
+            put(root / "EQT_SP_CAN" / "src" / "App.c", "")
+            put(root / "EQT_SP_CAN" / "include" / "App.h", "")
+            put(root / "Other" / "build" / "CMakeFiles" / "Other.dir" / "build.make", "")
+            code = makefile_local_recover.main([
+                "--root", str(root),
+                "--application", "EQT_SP_CAN",
+                "--output", str(output),
+            ])
+            self.assertEqual(2, code)
+            report = json.loads((output / "recovery-report.json").read_text())
+            self.assertEqual("RECOVERED_PARTIAL", report["status"])
+            self.assertEqual(["EQT_SP_CAN"], report["applications_detected"])
+            self.assertEqual(3, report["applications"]["EQT_SP_CAN"]["build_files"])
+            self.assertEqual(2, report["applications"]["EQT_SP_CAN"]["source_files"])
+            listed = json.loads((output / "root-build-files.json").read_text())
+            self.assertEqual(["EQT_SP_CAN"], listed["applications_detected"])
+
+    def test_makefile_local_recover_detects_all_root_applications(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "LCCS_Archive_CAST"
+            output = base / "recovered"
+            put(root / "EQT_ALRT" / "build" / "CMakeFiles" / "EQT_ALRT.dir" / "build.make", "")
+            put(root / "EQT_ALRT" / "build" / "CMakeFiles" / "EQT_ALRT.dir" / "flags.make", "")
+            put(root / "EQT_ALRT" / "src" / "EQT_ALRT.c", "")
+            put(root / "EQT_CAERO" / "build" / "CMakeFiles" / "EQT_CAERO.dir" / "build.make", "")
+            put(root / "EQT_CAERO" / "build" / "CMakeFiles" / "EQT_CAERO.dir" / "src" / "EQT_CAERO.c.o.d", "")
+            put(root / "EQT_CAERO" / "src" / "EQT_CAERO.c", "")
+            put(root / ".conan" / "data" / "Core" / "70.0.0" / "_" / "_" / "package" / "abc" / "include" / "core.h", "")
+            code = makefile_local_recover.main([
+                "--root", str(root),
+                "--output", str(output),
+            ])
+            self.assertEqual(2, code)
+            report = json.loads((output / "recovery-report.json").read_text())
+            self.assertEqual(["EQT_ALRT", "EQT_CAERO"], report["applications_detected"])
+            self.assertEqual(2, report["applications_count"])
+            self.assertEqual(2, report["applications"]["EQT_ALRT"]["build_files"])
+            self.assertEqual(2, report["applications"]["EQT_CAERO"]["build_files"])
 
     def test_client_log_is_copied_without_redaction(self):
         with tempfile.TemporaryDirectory() as temp:

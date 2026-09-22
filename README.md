@@ -60,6 +60,8 @@ Les formats normatifs se trouvent dans `schemas/` et des exemples dans `examples
 
 Un kit de transmission client est disponible dans `client-kit/`. Il contient un mode d’emploi court, un fichier de variables à renseigner et un exemple de job CI.
 
+Une variante séparée existe pour le cas où le client fournit déjà une version du code avec makefiles modifiés et travaille uniquement en local. Elle est documentée dans `docs/CLIENT_TEAM_PROCEDURE_MODIFIED_MAKEFILES.md` et `client-kit-modified-makefiles/README.md`.
+
 ## Automatisation côté client
 
 ### 1. Produire les éléments pendant le build
@@ -225,17 +227,19 @@ Après une première analyse, placer les logs CAST dans `cast-analysis-logs/` du
 - Les extensions propriétaires QCC non observées dans les arguments/probes peuvent nécessiter un réglage CAST complémentaire. Elles doivent alors être ajoutées comme cas de test et non corrigées silencieusement dans les makefiles.
 - Une couverture stricte de 100 % suppose que le dossier `source/` soit limité au périmètre de la cible. Si le dépôt contient plusieurs cibles, exporter seulement les sources de la cible ou produire un bundle par cible.
 
-## Pourquoi ne pas modifier les makefiles
+## Flux recommandé sans modification des makefiles
 
 L’export post-build évite une divergence avec le build qualifié, conserve les options réellement utilisées, ne touche pas au produit et reste réutilisable pour x86/ARM/Linux/QNX. Une modification des makefiles peut sembler plus directe mais crée une variante spécifique CAST, demande de maintenir les chemins Conan en double, risque de changer l’ordre des includes/macros et doit être revalidée à chaque évolution de l’environnement de build.
 
 En contrepartie, la solution recommandée exige une discipline d’artefacts CI et un export exact du cache. Les contrôles stricts, l’inventaire signé optionnel, les profils séparés, la couverture et la baseline réduisent ce risque sans déplacer Conan ou QCC vers l’équipe CAST.
 
+Si les makefiles ont déjà été modifiés côté client, utiliser la variante locale dédiée plutôt que cette procédure standard. Dans ce cas, les makefiles produisent un staging local, puis `makefile_local_export.py` le normalise en `CAST_DELIVERABLES_BUNDLE`. Si CAST reçoit une arborescence locale incomplète, `makefile_local_audit.py` confirme les livrables manquants. Lorsque le staging complet ne peut pas être redemandé, `makefile_local_recover.py` reconstruit un dossier de récupération partielle à partir des répertoires `build` présents sous la racine locale.
+
 ## Tests
 
 ```sh
 python3 -m unittest discover -s tests -v
-python3 -m py_compile cast_offline_collector.py client_ci_export.py
+python3 -m py_compile cast_offline_collector.py client_ci_export.py makefile_local_export.py makefile_local_audit.py makefile_local_recover.py
 ```
 
 Le code utilise uniquement la bibliothèque standard Python 3.9+.
@@ -245,6 +249,8 @@ La procédure pas-à-pas destinée à la CI et à l’équipe plateforme/toolcha
 La procédure opérationnelle de production destinée aux équipes CAST est disponible dans `docs/CAST_TEAM_PROCEDURE.md`.
 
 Le mode d’emploi du kit à remettre à l’équipe client est disponible dans `client-kit/README.md`.
+
+Le mode d’emploi de la variante locale avec makefiles modifiés est disponible dans `client-kit-modified-makefiles/README.md`.
 
 ## Dépôt Git et CI
 

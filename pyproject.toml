@@ -13,10 +13,13 @@ dependencies = []
 [project.scripts]
 cast-offline-collector = "cast_offline_collector:cli"
 cast-client-export = "client_ci_export:main"
+cast-makefile-local-export = "makefile_local_export:main"
+cast-makefile-local-audit = "makefile_local_audit:main"
+cast-makefile-local-recover = "makefile_local_recover:main"
 cast-conan2-inventory = "conan2_inventory:main"
 
 [tool.setuptools]
-py-modules = ["cast_offline_collector", "client_ci_export", "conan2_inventory"]
+py-modules = ["cast_offline_collector", "client_ci_export", "makefile_local_export", "makefile_local_audit", "makefile_local_recover", "conan2_inventory"]
 
 [tool.ruff]
 line-length = 120
