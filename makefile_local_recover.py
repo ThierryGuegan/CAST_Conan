@@ -88,23 +88,66 @@ def application_summary(app_root):
     }
 
 
-def conan_header_files(root):
+def conan_reference_parts(reference):
+    base = reference.split("@", 1)[0]
+    parts = base.split("/")
+    if len(parts) < 2:
+        return "", ""
+    return parts[0], parts[1]
+
+
+def conan_header_files(root, packages):
     conan_root = root / ".conan" / "data"
     if not conan_root.is_dir():
         return []
+    selected = set()
+    for package in packages:
+        name, version = conan_reference_parts(package.get("reference", ""))
+        package_id = package.get("package_id", "")
+        if name and version and package_id:
+            selected.add((name, version, package_id))
     return [
         item for item in conan_root.rglob("*")
-        if item.is_file() and "include" in item.parts and item.suffix.lower() in SOURCE_SUFFIXES
+        if item.is_file()
+        and "include" in item.parts
+        and item.suffix.lower() in SOURCE_SUFFIXES
+        and conan_cache_key(item, conan_root) in selected
     ]
 
 
-def compiler_probe_files(app_roots):
+def conan_cache_key(path, conan_root):
+    try:
+        parts = path.relative_to(conan_root).parts
+    except ValueError:
+        return None
+    if len(parts) < 7 or parts[4] != "package":
+        return None
+    return parts[0], parts[1], parts[5]
+
+
+def compiler_probe_files(root, app_roots):
     result = []
-    for app_root in app_roots:
-        for item in app_root.rglob("*"):
+    seen = set()
+    probe_roots = []
+    root_compiler = root / "compiler"
+    if root_compiler.is_dir():
+        probe_roots.append(root_compiler)
+    probe_roots.extend(app_roots)
+    for probe_root in probe_roots:
+        for item in probe_root.rglob("*"):
             if item.is_file() and (item.name.endswith(".macros.txt") or item.name.endswith(".includes.txt") or item.name == "qcc-variants.json"):
+                if item in seen:
+                    continue
+                seen.add(item)
                 result.append(item)
     return result
+
+
+def compiler_probe_destination(root, output, path):
+    relative = Path(relative_posix(path, root))
+    if relative.parts and relative.parts[0] == "compiler":
+        return output / relative
+    return output / "compiler" / relative
 
 
 def parse_make_variables(path):
@@ -260,7 +303,7 @@ def recover_conan(build_root):
     return packages
 
 
-def copy_recovery_inputs(root, app_roots, output):
+def copy_recovery_inputs(root, app_roots, output, packages):
     counts = {
         "copied_source_files": 0,
         "copied_conan_header_files": 0,
@@ -283,12 +326,12 @@ def copy_recovery_inputs(root, app_roots, output):
                     copy_file(item, output / "build" / relative_posix(item, root))
                     counts["copied_build_traces"] += 1
 
-    for item in conan_header_files(root):
+    for item in conan_header_files(root, packages):
         copy_file(item, output / "conan" / "export-recovered" / relative_posix(item, root))
         counts["copied_conan_header_files"] += 1
 
-    for item in compiler_probe_files(app_roots):
-        copy_file(item, output / "compiler" / relative_posix(item, root))
+    for item in compiler_probe_files(root, app_roots):
+        copy_file(item, compiler_probe_destination(root, output, item))
         counts["copied_probe_files"] += 1
 
     return counts
@@ -309,8 +352,6 @@ def recover(args):
     app_roots = selected_applications(root, args.application)
     summaries = {app.name: application_summary(app) for app in app_roots}
     build_roots = [app / "build" for app in app_roots if (app / "build").is_dir()]
-    conan_headers = conan_header_files(root)
-    probes = compiler_probe_files(app_roots)
 
     compile_commands = []
     packages = []
@@ -318,7 +359,9 @@ def recover(args):
         compile_commands.extend(recover_compile_commands(build_root))
         packages.extend(recover_conan(build_root))
 
-    copied = copy_recovery_inputs(root, app_roots, output)
+    conan_headers = conan_header_files(root, packages)
+    probes = compiler_probe_files(root, app_roots)
+    copied = copy_recovery_inputs(root, app_roots, output, packages)
     if compile_commands:
         write_json(output / "compilation" / "compile_commands.json", compile_commands)
     if packages:

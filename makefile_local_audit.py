@@ -140,7 +140,7 @@ def audit(snapshot):
 def required_action(missing):
     if not missing:
         return "Run makefile_local_export.py on the staged root, then send CAST_DELIVERABLES_BUNDLE."
-    return "Ask the client to regenerate a local CAST staging directory from the modified makefiles and include every missing input."
+    return "Run makefile_local_recover.py --root on the received local tree to recover partial CAST inputs; regenerate a complete local staging only if it is still possible."
 
 
 def format_text(report):

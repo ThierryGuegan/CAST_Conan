@@ -28,7 +28,7 @@ examples/
 4. L’équipe client transmet le bundle et la fiche de contexte à CAST.
 5. L’équipe CAST exécute le collecteur hors ligne.
 
-Une archive contenant seulement `build/` sert au diagnostic, pas au transfert CAST. Elle doit être auditée avec `makefile_local_audit.py` et complétée côté client avant export.
+Une archive contenant seulement `build/` sert au diagnostic, pas au transfert CAST. Elle doit être auditée avec `makefile_local_audit.py`. Si le client ne peut pas la compléter, l’équipe CAST utilise `makefile_local_recover.py` pour produire un dossier de récupération partielle.
 
 ## Commande type
 
@@ -60,9 +60,9 @@ Si l’équipe CAST reçoit une arborescence locale incomplète, contrôler son 
 python3 makefile_local_audit.py --root /local/LCCS_Archive_CAST
 ```
 
-Le statut `DIAGNOSTIC_ONLY` signifie que des traces de build sont présentes, mais que l’archive ne contient pas tous les livrables attendus. Le client doit régénérer le staging complet avec les makefiles modifiés.
+Le statut `DIAGNOSTIC_ONLY` signifie que des traces de build sont présentes, mais que l’archive ne contient pas tous les livrables attendus. Si le client ne peut pas régénérer le staging complet avec les makefiles modifiés, l’équipe CAST peut lancer une récupération locale partielle.
 
-Si cette régénération n’est pas possible, l’équipe CAST peut créer un dossier de récupération partielle à partir de la liste d’arborescence :
+La récupération se fait à partir du répertoire racine matérialisé :
 
 ```sh
 python3 makefile_local_recover.py \

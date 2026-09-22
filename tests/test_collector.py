@@ -372,6 +372,48 @@ class CollectorTests(unittest.TestCase):
             listed = json.loads((output / "root-build-files.json").read_text())
             self.assertEqual(["EQT_SP_CAN"], listed["applications_detected"])
 
+    def test_makefile_local_recover_filters_conan_headers_by_selected_application(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "LCCS_Archive_CAST"
+            output = base / "recovered"
+            put(root / "EQT_SP_CAN" / "build" / "conaninfo.txt", "[full_requires]\n    dep/1.0:abc123\n")
+            put(root / "EQT_SP_CAN" / "build" / "conanbuildinfo.txt", "[rootpath_dep]\nC:/cache/.conan/data/dep/1.0/_/_/package/abc123\n")
+            put(root / "Other" / "build" / "conaninfo.txt", "[full_requires]\n    other/2.0:def456\n")
+            put(root / "Other" / "build" / "conanbuildinfo.txt", "[rootpath_other]\nC:/cache/.conan/data/other/2.0/_/_/package/def456\n")
+            put(root / ".conan" / "data" / "dep" / "1.0" / "_" / "_" / "package" / "abc123" / "include" / "dep.h", "#pragma once\n")
+            put(root / ".conan" / "data" / "other" / "2.0" / "_" / "_" / "package" / "def456" / "include" / "other.h", "#pragma once\n")
+            code = makefile_local_recover.main([
+                "--root", str(root),
+                "--application", "EQT_SP_CAN",
+                "--output", str(output),
+            ])
+            self.assertEqual(2, code)
+            report = json.loads((output / "recovery-report.json").read_text())
+            self.assertEqual(1, report["copied_conan_header_files"])
+            self.assertTrue((output / "conan" / "export-recovered" / ".conan" / "data" / "dep" / "1.0" / "_" / "_" / "package" / "abc123" / "include" / "dep.h").is_file())
+            self.assertFalse((output / "conan" / "export-recovered" / ".conan" / "data" / "other" / "2.0" / "_" / "_" / "package" / "def456" / "include" / "other.h").exists())
+
+    def test_makefile_local_recover_copies_root_compiler_probes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "LCCS_Archive_CAST"
+            output = base / "recovered"
+            put(root / "EQT_SP_CAN" / "build" / "CMakeFiles" / "EQT_SP_CAN.dir" / "build.make", "")
+            put(root / "EQT_SP_CAN" / "src" / "App.c", "")
+            put(root / "compiler" / "qcc-variants.json", {"schema_version": 1, "variants": []})
+            put(root / "compiler" / "ntoarm.macros.txt", "#define X 1\n")
+            put(root / "compiler" / "ntoarm.includes.txt", "/qnx/target/usr/include\n")
+            code = makefile_local_recover.main([
+                "--root", str(root),
+                "--output", str(output),
+            ])
+            self.assertEqual(2, code)
+            report = json.loads((output / "recovery-report.json").read_text())
+            self.assertEqual(3, report["compiler_probe_files"])
+            self.assertEqual(3, report["copied_probe_files"])
+            self.assertTrue((output / "compiler" / "qcc-variants.json").is_file())
+
     def test_makefile_local_recover_detects_all_root_applications(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)

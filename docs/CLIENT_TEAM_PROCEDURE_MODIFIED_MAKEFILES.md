@@ -73,7 +73,7 @@ Dans ce cas, extraire ou monter l’arborescence localement, puis exécuter seul
 python3 makefile_local_audit.py --root /local/LCCS_Archive_CAST
 ```
 
-Un résultat `DIAGNOSTIC_ONLY` confirme que l’arborescence ne doit pas être transmise comme bundle CAST. Le client doit relancer le build local avec les makefiles modifiés et produire le staging complet.
+Un résultat `DIAGNOSTIC_ONLY` confirme que l’arborescence ne doit pas être transmise comme bundle CAST. Si c’est encore possible, le client relance le build local avec les makefiles modifiés et produit le staging complet.
 
 Si le client ne peut pas régénérer ce staging, l’équipe CAST peut uniquement lancer une récupération partielle depuis le répertoire racine local :
 
@@ -83,7 +83,7 @@ python3 makefile_local_recover.py \
   --output recovered-from-root
 ```
 
-Cette récupération produit d’abord un inventaire des éléments présents pour toutes les applications détectées : répertoires `build`, `build.make`, `flags.make`, `conaninfo.txt`, `conanbuildinfo.txt`, `.o.d`, sources, includes et en-têtes Conan. Elle génère `compile_commands.json` seulement si les fichiers CMake nécessaires sont présents.
+Cette récupération produit d’abord un inventaire des éléments présents pour toutes les applications détectées : répertoires `build`, `build.make`, `flags.make`, `conaninfo.txt`, `conanbuildinfo.txt`, `.o.d`, sources, includes et en-têtes Conan rattachables aux métadonnées Conan disponibles. Elle génère `compile_commands.json` seulement si les fichiers CMake nécessaires sont présents.
 
 Pour isoler une seule application, ajouter `--application <NOM_APPLICATION>` :
 

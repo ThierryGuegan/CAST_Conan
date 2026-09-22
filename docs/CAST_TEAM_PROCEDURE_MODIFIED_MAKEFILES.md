@@ -19,9 +19,7 @@ Si l’équipe CAST reçoit une arborescence locale incomplète, elle ne doit pa
 python3 makefile_local_audit.py --root /reception/LCCS_Archive_CAST
 ```
 
-Un statut `DIAGNOSTIC_ONLY` signifie que l’arborescence contient des traces utiles pour expliquer le build, mais qu’elle ne contient pas tous les livrables nécessaires. Dans ce cas, demander au client de régénérer le staging local complet avec les makefiles modifiés.
-
-Si cette demande n’est pas possible, utiliser un flux de récupération partielle basé sur le contenu réel du répertoire racine :
+Un statut `DIAGNOSTIC_ONLY` signifie que l’arborescence contient des traces utiles pour expliquer le build, mais qu’elle ne contient pas tous les livrables nécessaires. Si le client ne peut pas régénérer un staging complet, utiliser un flux de récupération partielle basé sur le contenu réel du répertoire racine :
 
 ```sh
 python3 makefile_local_recover.py \
@@ -29,7 +27,9 @@ python3 makefile_local_recover.py \
   --output /work/recovered-from-root
 ```
 
-Ce flux exploite les répertoires `build` présents sous la racine pour toutes les applications détectées. Pour limiter le traitement à un module, ajouter `--application <NOM_APPLICATION>`. Il est utile pour préparer la configuration ou documenter les manques. Il ne qualifie pas une analyse stricte tant que les sources, les en-têtes Conan host et les probes compilateur ne sont pas disponibles sous cette racine ou fournis par un autre canal déjà disponible côté CAST.
+Ce flux exploite les répertoires `build` présents sous la racine pour toutes les applications détectées. Pour limiter le traitement à un module, ajouter `--application <NOM_APPLICATION>`. Il est utile pour reconstruire un `compile_commands.json` partiel, rattacher les en-têtes Conan host identifiés par les métadonnées Conan disponibles et récupérer les probes compilateur présentes sous `compiler/`.
+
+La configuration CAST Imaging ne doit pas être créée à la main à partir de l’arborescence brute. Elle doit s’appuyer sur le package produit par `cast_offline_collector.py` lorsque le bundle est qualifié : `cast-config/analysis-units.json`, `cast-config/compilation-profiles.json`, `cast-config/force-include-*.h`, `cast-config/dependency-files.csv` et `CAST_ANALYSIS_PLAN.md`.
 
 ## 2. Exécution CAST
 
