@@ -69,7 +69,7 @@ def selected_applications(root, application):
     return selected
 
 
-def application_summary(app_root):
+def application_summary(root, app_root):
     build_root = app_root / "build"
     build_files = [item for item in build_root.rglob("*") if item.is_file()] if build_root.is_dir() else []
     source_files = [
@@ -79,7 +79,7 @@ def application_summary(app_root):
         if item.is_file() and item.suffix.lower() in SOURCE_SUFFIXES
     ]
     return {
-        "build_roots": [str(build_root)] if build_root.is_dir() else [],
+        "build_roots": [relative_posix(build_root, root)] if build_root.is_dir() else [],
         "build_files": len(build_files),
         "source_files": len(source_files),
         "build_make_files": len([item for item in build_files if item.name == "build.make"]),
@@ -176,7 +176,7 @@ def parse_command(command):
     return shlex.split(command.replace("\\", "\\\\"), posix=False)
 
 
-def recover_compile_commands(build_root):
+def recover_compile_commands(root, build_root, packages):
     entries = []
     for build_make in sorted(build_root.rglob("build.make")):
         flags_make = build_make.parent / "flags.make"
@@ -184,9 +184,12 @@ def recover_compile_commands(build_root):
             continue
         variables = parse_make_variables(flags_make)
         build_dir = ""
+        source_dir = ""
         for raw in build_make.read_text(encoding="utf-8", errors="replace").splitlines():
             if raw.startswith("CMAKE_BINARY_DIR ="):
                 build_dir = raw.split("=", 1)[1].strip()
+            if raw.startswith("CMAKE_SOURCE_DIR ="):
+                source_dir = raw.split("=", 1)[1].strip()
             match = COMPILE_COMMAND_PATTERN.match(raw)
             if not match:
                 continue
@@ -194,13 +197,137 @@ def recover_compile_commands(build_root):
             arguments = parse_command(expanded)
             if "-c" not in arguments:
                 continue
-            source = arguments[arguments.index("-c") + 1]
+            if arguments:
+                arguments[0] = Path(arguments[0]).name
+            arguments = normalize_compile_arguments(root, build_root, source_dir, packages, arguments)
+            recovered_source = arguments[arguments.index("-c") + 1]
             entries.append({
-                "directory": build_dir or str(build_make.parent),
-                "file": source,
+                "directory": relative_posix(build_root, root) if build_dir else relative_posix(build_make.parent, root),
+                "file": recovered_source,
                 "arguments": arguments,
             })
     return entries
+
+
+def normalize_compile_arguments(root, build_root, source_dir, packages, arguments):
+    result = []
+    paired_options = {"-I", "-isystem", "-iquote", "-idirafter", "-include", "-imacros", "--sysroot", "-isysroot", "-MF", "-MT", "-MQ", "-o", "-c"}
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument in paired_options and index + 1 < len(arguments):
+            result.append(argument)
+            result.append(normalize_compile_path(root, build_root, source_dir, packages, arguments[index + 1], option=argument))
+            index += 2
+            continue
+        handled = False
+        for prefix in ("-I", "-isystem", "-iquote", "-idirafter", "-include", "-imacros", "--sysroot=", "-isysroot="):
+            if argument.startswith(prefix) and argument != prefix:
+                result.append(prefix + normalize_compile_path(root, build_root, source_dir, packages, argument[len(prefix):], option=prefix.rstrip("=")))
+                handled = True
+                break
+        if not handled:
+            result.append(argument)
+        index += 1
+    return result
+
+
+def normalize_compile_path(root, build_root, source_dir, packages, value, option=""):
+    if option == "-c":
+        return recover_source_path(root, build_root, source_dir, value)
+    if value.startswith("=/"):
+        return "sysroot-relative/" + value[2:].lstrip("/")
+    if not looks_absolute(value):
+        return value
+    mapped = recover_source_path(root, build_root, source_dir, value)
+    if mapped != value:
+        return mapped
+    conan = recover_conan_path(packages, value)
+    if conan:
+        return conan
+    local = recover_local_path(root, value)
+    if local:
+        return local
+    return unresolved_relative_path(value)
+
+
+def recover_source_path(root, build_root, source_dir, source):
+    normalized_source = source.replace("\\", "/")
+    normalized_source_dir = source_dir.replace("\\", "/").rstrip("/")
+    app_root = build_root.parent
+    if normalized_source_dir and normalized_source.startswith(normalized_source_dir + "/"):
+        suffix = normalized_source[len(normalized_source_dir) + 1:]
+        candidate = app_root / suffix
+        if candidate.exists():
+            return "source/" + relative_posix(candidate, root)
+    candidate = Path(source)
+    if candidate.is_absolute() and is_relative_to(candidate, root):
+        return "source/" + relative_posix(candidate, root)
+    if not candidate.is_absolute():
+        local_candidate = app_root / candidate
+        if local_candidate.exists():
+            return "source/" + relative_posix(local_candidate, root)
+    return unresolved_relative_path(source) if looks_absolute(source) else source
+
+
+def recover_conan_path(packages, value):
+    normalized = normalize_path_text(value)
+    for package in packages:
+        original = normalize_path_text(package.get("original_root", ""))
+        if not original:
+            continue
+        if normalized == original:
+            suffix = ""
+        elif normalized.startswith(original + "/"):
+            suffix = normalized[len(original) + 1:]
+        else:
+            continue
+        parsed = package_from_cache_path(original)
+        if parsed:
+            base = f"conan/export-recovered/.conan/data/{parsed['name']}/{parsed['version']}/_/_/package/{parsed['package_id']}"
+        else:
+            reference = package.get("reference", "unknown/unknown")
+            package_id = package.get("package_id", "unknown")
+            base = f"conan/export-recovered/{reference}/{package_id}"
+        return base + (("/" + suffix) if suffix else "")
+    return ""
+
+
+def recover_local_path(root, value):
+    candidate = Path(value)
+    if candidate.is_absolute() and is_relative_to(candidate, root):
+        return relative_posix(candidate, root)
+    return ""
+
+
+def normalize_path_text(value):
+    return value.replace("\\", "/").rstrip("/")
+
+
+def looks_absolute(value):
+    normalized = normalize_path_text(value)
+    return normalized.startswith("/") or re.match(r"^[A-Za-z]:/", normalized) is not None
+
+
+def unresolved_relative_path(value):
+    normalized = normalize_path_text(value)
+    normalized = re.sub(r"^[A-Za-z]:/", "", normalized)
+    normalized = normalized.lstrip("/")
+    return "unresolved/" + normalized
+
+
+def has_absolute_path_text(value):
+    return bool(re.search(r"(^|[=\\s])([A-Za-z]:/|/)", normalize_path_text(value)))
+
+
+def compile_command_has_absolute_paths(entry):
+    values = [entry.get("directory", ""), entry.get("file", "")]
+    values.extend(entry.get("arguments", []))
+    return any(has_absolute_path_text(str(value)) for value in values)
+
+
+def drop_absolute_compile_commands(entries):
+    return [entry for entry in entries if not compile_command_has_absolute_paths(entry)]
 
 
 def first_existing(root, names):
@@ -350,14 +477,16 @@ def recover(args):
     output.mkdir(parents=True, exist_ok=True)
 
     app_roots = selected_applications(root, args.application)
-    summaries = {app.name: application_summary(app) for app in app_roots}
+    summaries = {app.name: application_summary(root, app) for app in app_roots}
     build_roots = [app / "build" for app in app_roots if (app / "build").is_dir()]
 
     compile_commands = []
     packages = []
     for build_root in build_roots:
-        compile_commands.extend(recover_compile_commands(build_root))
-        packages.extend(recover_conan(build_root))
+        recovered_packages = recover_conan(build_root)
+        packages.extend(recovered_packages)
+        compile_commands.extend(recover_compile_commands(root, build_root, recovered_packages))
+    compile_commands = drop_absolute_compile_commands(compile_commands)
 
     conan_headers = conan_header_files(root, packages)
     probes = compiler_probe_files(root, app_roots)
@@ -372,11 +501,11 @@ def recover(args):
         })
 
     write_json(output / "root-build-files.json", {
-        "root": str(root),
+        "root": ".",
         "application_filter": args.application,
         "applications_detected": [app.name for app in app_roots],
         "applications": summaries,
-        "build_roots": [str(path) for path in build_roots],
+        "build_roots": [relative_posix(path, root) for path in build_roots],
         "conan_header_files": [relative_posix(path, root) for path in conan_headers],
         "compiler_probe_files": [relative_posix(path, root) for path in probes],
     })
@@ -395,8 +524,8 @@ def recover(args):
 
     report = {
         "status": "RECOVERED_PARTIAL" if missing else "RECOVERED_WITH_LOCAL_SUPPLEMENTS",
-        "root": str(root),
-        "output": str(output),
+        "root": ".",
+        "output": ".",
         "application_filter": args.application,
         "applications_detected": [app.name for app in app_roots],
         "applications_count": len(app_roots),

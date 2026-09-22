@@ -409,11 +409,12 @@ def export_conan_packages(
             f"PackageRevision={package['package_revision']}",
             f"OriginalPackageFolder={package['original_root']}",
             f"ExportedFolder={package['exported_root']}", f"LogicalRoot={logical_root}",
-            f"CollectedFolder={destination}", f"ExportedHeaderCount={copied}",
+            f"CollectedFolder={destination.relative_to(package_root).as_posix()}",
+            f"ExportedHeaderCount={copied}",
         ]
         destination.mkdir(parents=True, exist_ok=True)
         (destination / "CONAN_INFO.txt").write_text("\n".join(info) + "\n", encoding="utf-8")
-        rows.append({**package, "destination": str(destination), "exported_header_count": str(copied), "status": "COLLECTED"})
+        rows.append({**package, "destination": destination.relative_to(package_root).as_posix(), "exported_header_count": str(copied), "status": "COLLECTED"})
     report = package_root / "cast-config" / "conan-dependencies.csv"
     report.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
@@ -892,7 +893,7 @@ def map_records_and_build_profiles(
         ]
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(remap_rows)
+        writer.writerows(package_relative_record(remap_rows, package_root))
     return records, profiles, source_rows
 
 
@@ -903,10 +904,20 @@ def package_relative(path: str, package_root: Path) -> str:
         return path
 
 
+def package_relative_record(value: Any, package_root: Path) -> Any:
+    if isinstance(value, dict):
+        return {key: package_relative_record(child, package_root) for key, child in value.items()}
+    if isinstance(value, list):
+        return [package_relative_record(child, package_root) for child in value]
+    if isinstance(value, str):
+        return package_relative(value, package_root)
+    return value
+
+
 def write_compilation_outputs(records: List[Dict[str, Any]], profiles: List[Dict[str, Any]], source_rows: List[Dict[str, Any]], package_root: Path) -> None:
     config = package_root / "cast-config"
-    write_json(config / "compiler-invocations.json", records)
-    write_json(config / "compilation-profiles.json", {"profiles": profiles})
+    write_json(config / "compiler-invocations.json", package_relative_record(records, package_root))
+    write_json(config / "compilation-profiles.json", {"profiles": package_relative_record(profiles, package_root)})
     analysis_units = []
     for profile in profiles:
         source_groups = {
@@ -935,21 +946,17 @@ def write_compilation_outputs(records: List[Dict[str, Any]], profiles: List[Dict
         writer = csv.DictWriter(stream, fieldnames=["source", "original", "resolved_original", "physical", "logical", "status", "rule"])
         writer.writeheader()
         for row in source_rows:
-            writer.writerow(row)
+            writer.writerow(package_relative_record(row, package_root))
     include_paths = []
     seen = set()
     for profile in profiles:
         for item in profile["mapped_includes"]:
             if item["status"] == "mapped" and item["physical"] not in seen:
                 seen.add(item["physical"])
-                include_paths.append(item["physical"])
-    (config / "cast-include-paths.absolute.txt").write_text("\n".join(include_paths) + ("\n" if include_paths else ""), encoding="utf-8")
+                include_paths.append(package_relative(item["physical"], package_root))
     relative_paths = []
     for path in include_paths:
-        try:
-            relative_paths.append(Path(path).relative_to(package_root).as_posix())
-        except ValueError:
-            relative_paths.append(path)
+        relative_paths.append(package_relative(path, package_root))
     (config / "cast-include-paths.relative.txt").write_text("\n".join(relative_paths) + ("\n" if relative_paths else ""), encoding="utf-8")
     unresolved = [row for row in source_rows if row["status"] != "mapped"]
     for record in records:
@@ -1093,7 +1100,7 @@ def compare_baseline(package_root: Path, baseline: Optional[Path]) -> Dict[str, 
     if baseline is None:
         return result
     baseline = baseline.resolve()
-    result["baseline"] = str(baseline)
+    result["baseline"] = baseline.name
     def canonical_identity(path: Path) -> Any:
         if not path.is_file():
             return None

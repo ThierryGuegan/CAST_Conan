@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -113,6 +114,16 @@ class CollectorTests(unittest.TestCase):
             self.assertTrue(all(not value.startswith("/") for value in units[0]["includes"]))
             dependencies = (package / "cast-config" / "dependency-files.csv").read_text()
             self.assertNotIn("dep.h:\n", dependencies)
+            self.assertFalse((package / "cast-config" / "cast-include-paths.absolute.txt").exists())
+            for relative in (
+                "cast-config/analysis-units.json",
+                "cast-config/compilation-profiles.json",
+                "cast-config/compiler-invocations.json",
+                "cast-config/path-remapping.csv",
+                "cast-config/source-coverage.csv",
+                "cast-config/conan-dependencies.csv",
+            ):
+                self.assertNotIn(str(package), (package / relative).read_text())
 
     def test_two_macro_sets_make_two_profiles(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -325,7 +336,7 @@ class CollectorTests(unittest.TestCase):
             put(app / "src" / "App.c", "int app(void){return 0;}\n")
             put(app / "include" / "App.h", "#pragma once\n")
             put(root / ".conan" / "data" / "dep" / "1.0" / "_" / "_" / "package" / "abc123" / "include" / "dep.h", "#pragma once\n")
-            put(app / "build" / "CMakeFiles" / "App.dir" / "flags.make", "C_DEFINES = -DDEBUG\nC_INCLUDES = -IC:/cache/dep/include\nC_FLAGS = -Vgcc_ntoarmv7le -g\n")
+            put(app / "build" / "CMakeFiles" / "App.dir" / "flags.make", "C_DEFINES = -DDEBUG\nC_INCLUDES = -IC:/cache/dep/include -isystem =/usr/include -include C:/work/App/include/App.h\nC_FLAGS = -Vgcc_ntoarmv7le -g\n")
             put(
                 app / "build" / "CMakeFiles" / "App.dir" / "build.make",
                 "CMAKE_SOURCE_DIR = C:/work/App\n"
@@ -340,12 +351,24 @@ class CollectorTests(unittest.TestCase):
             commands = json.loads((output / "compilation" / "compile_commands.json").read_text())
             self.assertEqual(1, len(commands))
             self.assertIn("-DDEBUG", commands[0]["arguments"])
+            self.assertEqual("App/build", commands[0]["directory"])
+            self.assertEqual("source/App/src/App.c", commands[0]["file"])
+            self.assertEqual("myCMakeQCC.bat", commands[0]["arguments"][0])
+            self.assertFalse(any(re.search(r"(^|[=\s])([A-Za-z]:/|/)", value.replace("\\", "/")) for value in commands[0]["arguments"]))
+            self.assertIn("-Iunresolved/cache/dep/include", commands[0]["arguments"])
+            self.assertIn("sysroot-relative/usr/include", commands[0]["arguments"])
+            self.assertIn("source/App/include/App.h", commands[0]["arguments"])
             packages = json.loads((output / "conan" / "packages.recovered.json").read_text())["packages"]
             self.assertEqual("dep/1.0", packages[0]["reference"])
             report = json.loads((output / "recovery-report.json").read_text())
             self.assertEqual("RECOVERED_PARTIAL", report["status"])
+            self.assertEqual(".", report["root"])
+            self.assertEqual(".", report["output"])
             self.assertEqual(["App"], report["applications_detected"])
             self.assertEqual(2, report["copied_source_files"])
+            root_listing = (output / "root-build-files.json").read_text()
+            self.assertNotIn(str(root), root_listing)
+            self.assertNotIn(str(output), root_listing)
 
     def test_makefile_local_recover_filters_one_application(self):
         with tempfile.TemporaryDirectory() as temp:

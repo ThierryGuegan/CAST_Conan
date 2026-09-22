@@ -211,8 +211,8 @@ def main(argv=None):
     issues = validate_bundle(bundle)
     status = "READY_FOR_TRANSFER" if not issues else "NOT_READY_FOR_TRANSFER"
     result = {
-        "bundle": str(bundle),
-        "staged_root": str(staged_root),
+        "bundle": ".",
+        "staged_root": ".",
         "status": status,
         "identity": identity_status,
         "copied": copied,
