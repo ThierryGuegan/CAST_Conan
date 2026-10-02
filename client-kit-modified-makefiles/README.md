@@ -57,7 +57,7 @@ Si le staging fournit déjà `identity/BUILD_IDENTITY.json`, les options d’ide
 Si l’équipe CAST reçoit une arborescence locale incomplète, contrôler son contenu avant toute tentative de collecte :
 
 ```sh
-python3 makefile_local_audit.py --root /local/LCCS_Archive_CAST
+python3 makefile_local_audit.py --root /local/PROJECT_Archive_CAST
 ```
 
 Le statut `DIAGNOSTIC_ONLY` signifie que des traces de build sont présentes, mais que l’archive ne contient pas tous les livrables attendus. Si le client ne peut pas régénérer le staging complet avec les makefiles modifiés, l’équipe CAST peut lancer une récupération locale partielle.
@@ -66,7 +66,7 @@ La récupération se fait à partir du répertoire racine matérialisé :
 
 ```sh
 python3 makefile_local_recover.py \
-  --root /local/LCCS_Archive_CAST \
+  --root /local/PROJECT_Archive_CAST \
   --output recovered-from-root
 ```
 

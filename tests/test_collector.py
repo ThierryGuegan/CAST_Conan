@@ -315,7 +315,7 @@ class CollectorTests(unittest.TestCase):
     def test_makefile_local_audit_flags_raw_cmake_build_tree(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
-            root = base / "LCCS_Archive_CAST"
+            root = base / "PROJECT_Archive_CAST"
             put(root / "App" / "build" / "CMakeCache.txt", "CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=\n")
             put(root / "App" / "build" / "CMakeFiles" / "App.dir" / "flags.make", "C_DEFINES = -DDEBUG\n")
             put(root / "App" / "build" / "CMakeFiles" / "App.dir" / "build.make", "App.o: src/App.c\n")
@@ -330,13 +330,27 @@ class CollectorTests(unittest.TestCase):
     def test_makefile_local_recover_creates_partial_artifacts(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
-            root = base / "LCCS_Archive_CAST"
+            root = base / "PROJECT_Archive_CAST"
             app = root / "App"
             output = base / "recovered"
             put(app / "src" / "App.c", "int app(void){return 0;}\n")
             put(app / "include" / "App.h", "#pragma once\n")
-            put(root / ".conan" / "data" / "dep" / "1.0" / "_" / "_" / "package" / "abc123" / "include" / "dep.h", "#pragma once\n")
-            put(app / "build" / "CMakeFiles" / "App.dir" / "flags.make", "C_DEFINES = -DDEBUG\nC_INCLUDES = -IC:/cache/dep/include -isystem =/usr/include -include C:/work/App/include/App.h\nC_FLAGS = -Vgcc_ntoarmv7le -g\n")
+            put(root / ".conan" / "data" / "Core" / "70.0.0" / "_" / "_" / "package" / "6d36175b7858b9d34e4cfb4c578ae50b8e54a65f" / "include" / "core.h", "#pragma once\n")
+            put(root / ".conan" / "data" / "Core" / "70.0.0" / "_" / "_" / "package" / "6d36175b7858b9d34e4cfb4c578ae50b8e54a65f" / "lib" / "core.a", "")
+            put(root / ".conan" / "data" / "project-bus" / "70.0.0" / "_" / "_" / "package" / "5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9" / "include" / "bus.h", "#pragma once\n")
+            put(root / ".conan" / "data" / "libQNX" / "7.0.2" / "_" / "_" / "package" / "20bb78565db6a88fe4d4f78dcb593054d3916036" / "include" / "qnx.h", "#pragma once\n")
+            put(root / ".conan" / "data" / "libresource" / "3.1.1" / "_" / "_" / "package" / "20bb78565db6a88fe4d4f78dcb593054d3916036" / "include" / "resource.h", "#pragma once\n")
+            put(
+                app / "build" / "CMakeFiles" / "App.dir" / "flags.make",
+                "C_DEFINES = -DDEBUG\n"
+                "C_INCLUDES = "
+                "-Iunresolved/Users/DEVUSER/Documents/Workspace/.conan/data/Core/70.0.0/*/*/package/6d36175b7858b9d34e4cfb4c578ae50b8e54a65f/include "
+                "-Iunresolved/Users/DEVUSER/Documents/Workspace/.conan/data/project-bus/70.0.0/_/_/package/5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9/include "
+                "-Iunresolved/Users/DEVUSER/Documents/Workspace/.conan/data/libresource/3.1.1/*/*/package/20bb78565db6a88fe4d4f78dcb593054d3916036/include "
+                "-Iunresolved/Users/DEVUSER/Documents/Workspace/.conan/data/libQNX/7.0.2/*/*/package/20bb78565db6a88fe4d4f78dcb593054d3916036/include "
+                "-isystem =/usr/include -include C:/work/App/include/App.h\n"
+                "C_FLAGS = -Vgcc_ntoarmv7le -g\n",
+            )
             put(
                 app / "build" / "CMakeFiles" / "App.dir" / "build.make",
                 "CMAKE_SOURCE_DIR = C:/work/App\n"
@@ -344,10 +358,28 @@ class CollectorTests(unittest.TestCase):
                 "\tC:/qnx/usr/bin/myCMakeQCC.bat $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT App.o -MF App.o.d -o App.o -c C:/work/App/src/App.c\n",
             )
             put(app / "build" / "CMakeFiles" / "App.dir" / "src" / "App.c.o.d", "App.o: C:/work/App/src/App.c C:/cache/dep/include/dep.h\n")
-            put(app / "build" / "conaninfo.txt", "[full_requires]\n    dep/1.0:abc123\n")
-            put(app / "build" / "conanbuildinfo.txt", "[rootpath_dep]\nC:/cache/.conan/data/dep/1.0/_/_/package/abc123\n")
+            put(app / "build" / "CMakeFiles" / "App.dir" / "src" / "App.c.o", "")
+            put(
+                app / "build" / "conaninfo.txt",
+                "[full_requires]\n"
+                "    Core/70.0.0:6d36175b7858b9d34e4cfb4c578ae50b8e54a65f\n"
+                "    project-bus/70.0.0:5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9\n"
+                "    libQNX/7.0.2:20bb78565db6a88fe4d4f78dcb593054d3916036\n"
+                "    libresource/3.1.1:20bb78565db6a88fe4d4f78dcb593054d3916036\n",
+            )
+            put(
+                app / "build" / "conanbuildinfo.txt",
+                "[rootpath_Core]\n"
+                "C:/Users/DEVUSER/.conan/data/Core/70.0.0/*/*/package/6d36175b7858b9d34e4cfb4c578ae50b8e54a65f\n"
+                "[rootpath_project-bus]\n"
+                "C:/Users/DEVUSER/.conan/data/project-bus/70.0.0/_/_/package/5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9\n"
+                "[rootpath_libQNX]\n"
+                "C:/Users/DEVUSER/.conan/data/libQNX/7.0.2/_/_/package/20bb78565db6a88fe4d4f78dcb593054d3916036\n"
+                "[rootpath_libresource]\n"
+                "C:/Users/DEVUSER/.conan/data/libresource/3.1.1/_/_/package/20bb78565db6a88fe4d4f78dcb593054d3916036\n",
+            )
             code = makefile_local_recover.main(["--root", str(root), "--output", str(output)])
-            self.assertEqual(2, code)
+            self.assertEqual(0, code)
             commands = json.loads((output / "compilation" / "compile_commands.json").read_text())
             self.assertEqual(1, len(commands))
             self.assertIn("-DDEBUG", commands[0]["arguments"])
@@ -355,13 +387,26 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual("source/App/src/App.c", commands[0]["file"])
             self.assertEqual("myCMakeQCC.bat", commands[0]["arguments"][0])
             self.assertFalse(any(re.search(r"(^|[=\s])([A-Za-z]:/|/)", value.replace("\\", "/")) for value in commands[0]["arguments"]))
-            self.assertIn("-Iunresolved/cache/dep/include", commands[0]["arguments"])
+            self.assertIn("-Iconan/export-recovered/.conan/data/Core/70.0.0/_/_/package/6d36175b7858b9d34e4cfb4c578ae50b8e54a65f/include", commands[0]["arguments"])
+            self.assertIn("-Iconan/export-recovered/.conan/data/project-bus/70.0.0/_/_/package/5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9/include", commands[0]["arguments"])
+            self.assertIn("-Iconan/export-recovered/.conan/data/libQNX/7.0.2/_/_/package/20bb78565db6a88fe4d4f78dcb593054d3916036/include", commands[0]["arguments"])
+            self.assertIn("-Iconan/export-recovered/.conan/data/libresource/3.1.1/_/_/package/20bb78565db6a88fe4d4f78dcb593054d3916036/include", commands[0]["arguments"])
             self.assertIn("sysroot-relative/usr/include", commands[0]["arguments"])
             self.assertIn("source/App/include/App.h", commands[0]["arguments"])
             packages = json.loads((output / "conan" / "packages.recovered.json").read_text())["packages"]
-            self.assertEqual("dep/1.0", packages[0]["reference"])
+            self.assertEqual(
+                [
+                    ".conan/data/Core/70.0.0/*/*/package/6d36175b7858b9d34e4cfb4c578ae50b8e54a65f",
+                    ".conan/data/project-bus/70.0.0/_/_/package/5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9",
+                    ".conan/data/libQNX/7.0.2/_/_/package/20bb78565db6a88fe4d4f78dcb593054d3916036",
+                    ".conan/data/libresource/3.1.1/_/_/package/20bb78565db6a88fe4d4f78dcb593054d3916036",
+                ],
+                [item["original_root"] for item in packages],
+            )
             report = json.loads((output / "recovery-report.json").read_text())
-            self.assertEqual("RECOVERED_PARTIAL", report["status"])
+            self.assertEqual("RECOVERED_WITH_LOCAL_SUPPLEMENTS", report["status"])
+            self.assertNotIn("QCC macro/include probes", report["missing_for_strict_cast"])
+            self.assertEqual(3, report["recovered_probe_placeholders"])
             self.assertEqual(".", report["root"])
             self.assertEqual(".", report["output"])
             self.assertEqual(["App"], report["applications_detected"])
@@ -369,46 +414,212 @@ class CollectorTests(unittest.TestCase):
             root_listing = (output / "root-build-files.json").read_text()
             self.assertNotIn(str(root), root_listing)
             self.assertNotIn(str(output), root_listing)
+            self.assertTrue((output / "compiler" / "gcc_ntoarmv7le-c.macros.txt").is_file())
+            self.assertTrue((output / "compiler" / "gcc_ntoarmv7le-c.includes.txt").is_file())
+            variants = json.loads((output / "compiler" / "qcc-variants.json").read_text())["variants"]
+            self.assertEqual("reconstructed_from_compile_commands", variants[0]["recovery"])
+            self.assertIn("#define DEBUG 1", (output / "compiler" / "gcc_ntoarmv7le-c.macros.txt").read_text())
+            includes_text = (output / "compiler" / "gcc_ntoarmv7le-c.includes.txt").read_text()
+            self.assertIn("conan/export-recovered/.conan/data/Core/70.0.0/_/_/package/6d36175b7858b9d34e4cfb4c578ae50b8e54a65f/include", includes_text)
+            self.assertIn("conan/export-recovered/.conan/data/project-bus/70.0.0/_/_/package/5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9/include", includes_text)
+            self.assertIn("conan/export-recovered/.conan/data/libQNX/7.0.2/_/_/package/20bb78565db6a88fe4d4f78dcb593054d3916036/include", includes_text)
+            self.assertIn("conan/export-recovered/.conan/data/libresource/3.1.1/_/_/package/20bb78565db6a88fe4d4f78dcb593054d3916036/include", includes_text)
+            self.assertTrue((output / "conan" / "export-recovered" / ".conan" / "data" / "Core" / "70.0.0" / "_" / "_" / "package" / "6d36175b7858b9d34e4cfb4c578ae50b8e54a65f" / "include" / "core.h").is_file())
+            self.assertTrue((output / "conan" / "export-recovered" / ".conan" / "data" / "project-bus" / "70.0.0" / "_" / "_" / "package" / "5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9" / "include" / "bus.h").is_file())
+            self.assertTrue((output / "conan" / "export-recovered" / ".conan" / "data" / "libQNX" / "7.0.2" / "_" / "_" / "package" / "20bb78565db6a88fe4d4f78dcb593054d3916036" / "include" / "qnx.h").is_file())
+            self.assertTrue((output / "conan" / "export-recovered" / ".conan" / "data" / "libresource" / "3.1.1" / "_" / "_" / "package" / "20bb78565db6a88fe4d4f78dcb593054d3916036" / "include" / "resource.h").is_file())
+            mapping = json.loads((output / "copy-mapping.json").read_text())
+            self.assertEqual(report["copied_mapping_files"], mapping["copied_count"])
+            self.assertTrue(all(not Path(item["source"]).is_absolute() for item in mapping["copied"]))
+            self.assertTrue(all(not Path(item["destination"]).is_absolute() for item in mapping["copied"]))
+            self.assertIn({
+                "category": "source",
+                "source": "App/src/App.c",
+                "destination": "source/App/src/App.c",
+            }, mapping["copied"])
+            self.assertIn({
+                "category": "conan_headers",
+                "source": ".conan/data/Core/70.0.0/_/_/package/6d36175b7858b9d34e4cfb4c578ae50b8e54a65f/include/core.h",
+                "destination": "conan/export-recovered/.conan/data/Core/70.0.0/_/_/package/6d36175b7858b9d34e4cfb4c578ae50b8e54a65f/include/core.h",
+            }, mapping["copied"])
+            coverage = json.loads((output / "copy-coverage.json").read_text())
+            self.assertEqual(report["root_files"], coverage["root_files"])
+            self.assertGreater(coverage["root_files"], mapping["copied_count"])
+            self.assertEqual(mapping["copied_count"], coverage["reason_counts"]["copied_from_root"])
+            self.assertGreaterEqual(coverage["reason_counts"]["dependency_trace_not_copied_optional_absolute_paths"], 1)
+            self.assertGreaterEqual(coverage["reason_counts"]["build_artifact_not_required_for_recovery"], 1)
+            self.assertGreaterEqual(coverage["reason_counts"]["conan_cache_non_header_or_binary_artifact"], 1)
+            self.assertIn("compilation/compile_commands.json", coverage["generated_output_samples"])
+
+    def test_makefile_local_recover_keeps_compile_commands_with_unresolved_absolute_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "PROJECT_Archive_CAST"
+            app = root / "App"
+            output = base / "recovered"
+            put(app / "src" / "App.c", "int app(void){return 0;}\n")
+            put(app / "build" / "CMakeFiles" / "App.dir" / "flags.make", "C_INCLUDES = -IC:/missing/vendor/include -isystem=/usr/include\nC_FLAGS = -Vgcc_ntoarmv7le\n")
+            put(
+                app / "build" / "CMakeFiles" / "App.dir" / "build.make",
+                "CMAKE_SOURCE_DIR = C:/work/App\n"
+                "CMAKE_BINARY_DIR = C:/work/App/build\n"
+                "\tC:/qnx/usr/bin/myCMakeQCC.bat $(C_INCLUDES) $(C_FLAGS) -c C:/work/App/src/App.c\n",
+            )
+            code = makefile_local_recover.main(["--root", str(root), "--output", str(output)])
+            self.assertEqual(2, code)
+            commands_path = output / "compilation" / "compile_commands.json"
+            self.assertTrue(commands_path.is_file())
+            commands = json.loads(commands_path.read_text())
+            self.assertEqual(1, len(commands))
+            self.assertIn("-Iunresolved/missing/vendor/include", commands[0]["arguments"])
+            self.assertIn("-isystem=unresolved/usr/include", commands[0]["arguments"])
+            self.assertNotIn("-isystemsysroot-relative/usr/include", commands[0]["arguments"])
+            self.assertEqual("source/App/src/App.c", commands[0]["arguments"][commands[0]["arguments"].index("-c") + 1])
+
+    def test_makefile_local_recover_reconstructs_unknown_qcc_probe_arguments(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "PROJECT_Archive_CAST"
+            app = root / "App"
+            output = base / "recovered"
+            put(app / "src" / "App.c", "int app(void){return FEATURE;}\n")
+            put(app / "build" / "CMakeFiles" / "App.dir" / "flags.make", "C_DEFINES = -DFEATURE=1\nC_INCLUDES = -Iinclude\nC_FLAGS = -g\n")
+            put(
+                app / "build" / "CMakeFiles" / "App.dir" / "build.make",
+                "CMAKE_SOURCE_DIR = C:/work/App\n"
+                "CMAKE_BINARY_DIR = C:/work/App/build\n"
+                "\tC:/qnx/usr/bin/myCMakeQCC.bat $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -c C:/work/App/src/App.c\n",
+            )
+            code = makefile_local_recover.main(["--root", str(root), "--output", str(output)])
+            self.assertEqual(2, code)
+            variants = json.loads((output / "compiler" / "qcc-variants.json").read_text())["variants"]
+            self.assertEqual("unknown-qcc", variants[0]["variant"])
+            self.assertIn("#define FEATURE 1", (output / "compiler" / "unknown-qcc-c.macros.txt").read_text())
+            self.assertIn("include", (output / "compiler" / "unknown-qcc-c.includes.txt").read_text())
+
+    def test_makefile_local_recover_uses_real_source_after_repeated_c_option(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "PROJECT_Archive_CAST"
+            app = root / "App"
+            output = base / "recovered"
+            put(app / "src" / "App.c", "int app(void){return 0;}\n")
+            put(app / "build" / "CMakeFiles" / "App.dir" / "flags.make", "C_FLAGS = -Vgcc_ntoarmv7le -c -Wc,-Wall\n")
+            put(
+                app / "build" / "CMakeFiles" / "App.dir" / "build.make",
+                "CMAKE_SOURCE_DIR = C:/work/App\n"
+                "CMAKE_BINARY_DIR = C:/work/App/build\n"
+                "\tC:/qnx/usr/bin/myCMakeQCC.bat $(C_FLAGS) -o App.o -c C:/work/App/src/App.c\n",
+            )
+            code = makefile_local_recover.main(["--root", str(root), "--output", str(output)])
+            self.assertEqual(2, code)
+            commands = json.loads((output / "compilation" / "compile_commands.json").read_text())
+            self.assertEqual("source/App/src/App.c", commands[0]["file"])
+            self.assertIn("-Wc,-Wall", commands[0]["arguments"])
+
+    def test_makefile_local_recover_copies_nested_application_sources(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "PROJECT_Archive_CAST"
+            app = root / "Core"
+            output = base / "recovered"
+            put(app / "SF" / "Services" / "src" / "bus.c", "int bus(void){return 0;}\n")
+            put(app / "SF" / "Services" / "include" / "bus.h", "#pragma once\n")
+            put(app / "SF" / "arch" / "include" / "arch.h", "#pragma once\n")
+            put(
+                app / "build" / "CMakeFiles" / "Core.dir" / "flags.make",
+                "C_INCLUDES = -IC:/Users/DEVUSER/Documents/Workspace/Core/./SF/Services/include "
+                "-Iunresolved/Users/DEVUSER/Documents/Workspace/Core/./SF/arch/include\n"
+                "C_FLAGS = -Vgcc_ntoarmv7le\n",
+            )
+            put(
+                app / "build" / "CMakeFiles" / "Core.dir" / "build.make",
+                "CMAKE_SOURCE_DIR = C:/Users/DEVUSER/Documents/Workspace/Core\n"
+                "CMAKE_BINARY_DIR = C:/Users/DEVUSER/Documents/Workspace/Core/build\n"
+                "\tC:/qnx/usr/bin/myCMakeQCC.bat $(C_INCLUDES) $(C_FLAGS) -c C:/Users/DEVUSER/Documents/Workspace/Core/./SF/Services/src/bus.c\n",
+            )
+            code = makefile_local_recover.main(["--root", str(root), "--output", str(output)])
+            self.assertEqual(2, code)
+            commands = json.loads((output / "compilation" / "compile_commands.json").read_text())
+            self.assertEqual("source/Core/SF/Services/src/bus.c", commands[0]["file"])
+            self.assertIn("-Isource/Core/SF/Services/include", commands[0]["arguments"])
+            self.assertIn("-Isource/Core/SF/arch/include", commands[0]["arguments"])
+            self.assertTrue((output / "source" / "Core" / "SF" / "Services" / "src" / "bus.c").is_file())
+            self.assertTrue((output / "source" / "Core" / "SF" / "Services" / "include" / "bus.h").is_file())
+            self.assertTrue((output / "source" / "Core" / "SF" / "arch" / "include" / "arch.h").is_file())
+
+    def test_makefile_local_recover_keeps_conan_user_channel_disambiguation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "PROJECT_Archive_CAST"
+            app = root / "App"
+            output = base / "recovered"
+            package_id = "abc123"
+            put(app / "src" / "App.c", "int app(void){return 0;}\n")
+            put(root / ".conan" / "data" / "dep" / "1.0" / "stable" / "prod" / "package" / package_id / "include" / "dep.h", "#pragma once\n")
+            put(root / ".conan" / "data" / "dep" / "1.0" / "testing" / "dev" / "package" / package_id / "include" / "dep.h", "#pragma once\n")
+            put(
+                app / "build" / "CMakeFiles" / "App.dir" / "flags.make",
+                f"C_INCLUDES = -IC:/cache/.conan/data/dep/1.0/testing/dev/package/{package_id}/include\n"
+                "C_FLAGS = -Vgcc_ntoarmv7le\n",
+            )
+            put(
+                app / "build" / "CMakeFiles" / "App.dir" / "build.make",
+                "CMAKE_SOURCE_DIR = C:/work/App\n"
+                "CMAKE_BINARY_DIR = C:/work/App/build\n"
+                "\tC:/qnx/usr/bin/myCMakeQCC.bat $(C_INCLUDES) $(C_FLAGS) -c C:/work/App/src/App.c\n",
+            )
+            put(app / "build" / "conaninfo.txt", f"[full_requires]\n    dep/1.0:{package_id}\n")
+            put(app / "build" / "conanbuildinfo.txt", f"[rootpath_dep]\nC:/cache/.conan/data/dep/1.0/testing/dev/package/{package_id}\n")
+            code = makefile_local_recover.main(["--root", str(root), "--output", str(output)])
+            self.assertEqual(0, code)
+            commands = json.loads((output / "compilation" / "compile_commands.json").read_text())
+            self.assertIn(
+                f"-Iconan/export-recovered/.conan/data/dep/1.0/testing/dev/package/{package_id}/include",
+                commands[0]["arguments"],
+            )
+            self.assertTrue((output / "conan" / "export-recovered" / ".conan" / "data" / "dep" / "1.0" / "testing" / "dev" / "package" / package_id / "include" / "dep.h").is_file())
+            self.assertFalse((output / "conan" / "export-recovered" / ".conan" / "data" / "dep" / "1.0" / "stable" / "prod" / "package" / package_id / "include" / "dep.h").exists())
 
     def test_makefile_local_recover_filters_one_application(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
-            root = base / "LCCS_Archive_CAST"
+            root = base / "PROJECT_Archive_CAST"
             output = base / "recovered"
-            put(root / "EQT_SP_CAN" / "build" / "CMakeFiles" / "EQT_SP_CAN.dir" / "build.make", "")
-            put(root / "EQT_SP_CAN" / "build" / "CMakeFiles" / "EQT_SP_CAN.dir" / "flags.make", "")
-            put(root / "EQT_SP_CAN" / "build" / "CMakeFiles" / "EQT_SP_CAN.dir" / "src" / "App.c.o.d", "")
-            put(root / "EQT_SP_CAN" / "src" / "App.c", "")
-            put(root / "EQT_SP_CAN" / "include" / "App.h", "")
+            put(root / "APP_ALPHA" / "build" / "CMakeFiles" / "APP_ALPHA.dir" / "build.make", "")
+            put(root / "APP_ALPHA" / "build" / "CMakeFiles" / "APP_ALPHA.dir" / "flags.make", "")
+            put(root / "APP_ALPHA" / "build" / "CMakeFiles" / "APP_ALPHA.dir" / "src" / "App.c.o.d", "")
+            put(root / "APP_ALPHA" / "src" / "App.c", "")
+            put(root / "APP_ALPHA" / "include" / "App.h", "")
             put(root / "Other" / "build" / "CMakeFiles" / "Other.dir" / "build.make", "")
             code = makefile_local_recover.main([
                 "--root", str(root),
-                "--application", "EQT_SP_CAN",
+                "--application", "APP_ALPHA",
                 "--output", str(output),
             ])
             self.assertEqual(2, code)
             report = json.loads((output / "recovery-report.json").read_text())
             self.assertEqual("RECOVERED_PARTIAL", report["status"])
-            self.assertEqual(["EQT_SP_CAN"], report["applications_detected"])
-            self.assertEqual(3, report["applications"]["EQT_SP_CAN"]["build_files"])
-            self.assertEqual(2, report["applications"]["EQT_SP_CAN"]["source_files"])
+            self.assertEqual(["APP_ALPHA"], report["applications_detected"])
+            self.assertEqual(3, report["applications"]["APP_ALPHA"]["build_files"])
+            self.assertEqual(2, report["applications"]["APP_ALPHA"]["source_files"])
             listed = json.loads((output / "root-build-files.json").read_text())
-            self.assertEqual(["EQT_SP_CAN"], listed["applications_detected"])
+            self.assertEqual(["APP_ALPHA"], listed["applications_detected"])
 
     def test_makefile_local_recover_filters_conan_headers_by_selected_application(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
-            root = base / "LCCS_Archive_CAST"
+            root = base / "PROJECT_Archive_CAST"
             output = base / "recovered"
-            put(root / "EQT_SP_CAN" / "build" / "conaninfo.txt", "[full_requires]\n    dep/1.0:abc123\n")
-            put(root / "EQT_SP_CAN" / "build" / "conanbuildinfo.txt", "[rootpath_dep]\nC:/cache/.conan/data/dep/1.0/_/_/package/abc123\n")
+            put(root / "APP_ALPHA" / "build" / "conaninfo.txt", "[full_requires]\n    dep/1.0:abc123\n")
+            put(root / "APP_ALPHA" / "build" / "conanbuildinfo.txt", "[rootpath_dep]\nC:/cache/.conan/data/dep/1.0/_/_/package/abc123\n")
             put(root / "Other" / "build" / "conaninfo.txt", "[full_requires]\n    other/2.0:def456\n")
             put(root / "Other" / "build" / "conanbuildinfo.txt", "[rootpath_other]\nC:/cache/.conan/data/other/2.0/_/_/package/def456\n")
             put(root / ".conan" / "data" / "dep" / "1.0" / "_" / "_" / "package" / "abc123" / "include" / "dep.h", "#pragma once\n")
             put(root / ".conan" / "data" / "other" / "2.0" / "_" / "_" / "package" / "def456" / "include" / "other.h", "#pragma once\n")
             code = makefile_local_recover.main([
                 "--root", str(root),
-                "--application", "EQT_SP_CAN",
+                "--application", "APP_ALPHA",
                 "--output", str(output),
             ])
             self.assertEqual(2, code)
@@ -417,13 +628,55 @@ class CollectorTests(unittest.TestCase):
             self.assertTrue((output / "conan" / "export-recovered" / ".conan" / "data" / "dep" / "1.0" / "_" / "_" / "package" / "abc123" / "include" / "dep.h").is_file())
             self.assertFalse((output / "conan" / "export-recovered" / ".conan" / "data" / "other" / "2.0" / "_" / "_" / "package" / "def456" / "include" / "other.h").exists())
 
+    def test_makefile_local_recover_reports_uncopied_conan_headers(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "PROJECT_Archive_CAST"
+            output = base / "recovered"
+            put(root / "App" / "build" / "conaninfo.txt", "[full_requires]\n    dep/1.0:abc123\n")
+            put(root / "App" / "build" / "conanbuildinfo.txt", "[rootpath_dep]\nC:/cache/.conan/data/dep/1.0/_/_/package/abc123\n")
+            code = makefile_local_recover.main([
+                "--root", str(root),
+                "--output", str(output),
+            ])
+            self.assertEqual(2, code)
+            report = json.loads((output / "recovery-report.json").read_text())
+            self.assertEqual(1, report["not_copied_files"])
+            diagnostics = json.loads((output / "copy-diagnostics.json").read_text())
+            self.assertEqual(1, diagnostics["not_copied_count"])
+            self.assertEqual("conan_headers", diagnostics["not_copied"][0]["category"])
+            self.assertEqual(".conan/data/dep/1.0/_/_/package/abc123", diagnostics["not_copied"][0]["source"])
+            self.assertFalse(Path(diagnostics["not_copied"][0]["source"]).is_absolute())
+            self.assertFalse(Path(diagnostics["not_copied"][0]["destination"]).is_absolute())
+            self.assertEqual("delivered .conan/data directory not found", diagnostics["not_copied"][0]["reason"])
+
+    def test_makefile_local_recover_deduplicates_conan_manifest(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "PROJECT_Archive_CAST"
+            output = base / "recovered"
+            put(root / ".conan" / "data" / "dep" / "1.0" / "_" / "_" / "package" / "abc123" / "include" / "dep.h", "#pragma once\n")
+            for app_name in ("AppA", "AppB"):
+                put(root / app_name / "src" / f"{app_name}.c", "int f(void){return 0;}\n")
+                put(root / app_name / "build" / "conaninfo.txt", "[full_requires]\n    dep/1.0:abc123\n    missing/1.0:def456\n")
+                put(root / app_name / "build" / "conanbuildinfo.txt", "[rootpath_dep]\nC:/cache/.conan/data/dep/1.0/_/_/package/abc123\n")
+            code = makefile_local_recover.main(["--root", str(root), "--output", str(output)])
+            self.assertEqual(2, code)
+            packages = json.loads((output / "conan" / "packages.json").read_text())["packages"]
+            self.assertEqual(1, len(packages))
+            self.assertEqual("dep/1.0", packages[0]["reference"])
+            self.assertTrue((output / "conan" / "conan-graph.json").is_file())
+            self.assertTrue((output / "identity" / "BUILD_IDENTITY.json").is_file())
+            diagnostics = json.loads((output / "copy-diagnostics.json").read_text())
+            self.assertEqual(0, diagnostics["not_copied_count"])
+
     def test_makefile_local_recover_copies_root_compiler_probes(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
-            root = base / "LCCS_Archive_CAST"
+            root = base / "PROJECT_Archive_CAST"
             output = base / "recovered"
-            put(root / "EQT_SP_CAN" / "build" / "CMakeFiles" / "EQT_SP_CAN.dir" / "build.make", "")
-            put(root / "EQT_SP_CAN" / "src" / "App.c", "")
+            put(root / "APP_ALPHA" / "build" / "CMakeFiles" / "APP_ALPHA.dir" / "build.make", "")
+            put(root / "APP_ALPHA" / "src" / "App.c", "")
             put(root / "compiler" / "qcc-variants.json", {"schema_version": 1, "variants": []})
             put(root / "compiler" / "ntoarm.macros.txt", "#define X 1\n")
             put(root / "compiler" / "ntoarm.includes.txt", "/qnx/target/usr/include\n")
@@ -440,14 +693,14 @@ class CollectorTests(unittest.TestCase):
     def test_makefile_local_recover_detects_all_root_applications(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
-            root = base / "LCCS_Archive_CAST"
+            root = base / "PROJECT_Archive_CAST"
             output = base / "recovered"
-            put(root / "EQT_ALRT" / "build" / "CMakeFiles" / "EQT_ALRT.dir" / "build.make", "")
-            put(root / "EQT_ALRT" / "build" / "CMakeFiles" / "EQT_ALRT.dir" / "flags.make", "")
-            put(root / "EQT_ALRT" / "src" / "EQT_ALRT.c", "")
-            put(root / "EQT_CAERO" / "build" / "CMakeFiles" / "EQT_CAERO.dir" / "build.make", "")
-            put(root / "EQT_CAERO" / "build" / "CMakeFiles" / "EQT_CAERO.dir" / "src" / "EQT_CAERO.c.o.d", "")
-            put(root / "EQT_CAERO" / "src" / "EQT_CAERO.c", "")
+            put(root / "APP_BETA" / "build" / "CMakeFiles" / "APP_BETA.dir" / "build.make", "")
+            put(root / "APP_BETA" / "build" / "CMakeFiles" / "APP_BETA.dir" / "flags.make", "")
+            put(root / "APP_BETA" / "src" / "APP_BETA.c", "")
+            put(root / "APP_GAMMA" / "build" / "CMakeFiles" / "APP_GAMMA.dir" / "build.make", "")
+            put(root / "APP_GAMMA" / "build" / "CMakeFiles" / "APP_GAMMA.dir" / "src" / "APP_GAMMA.c.o.d", "")
+            put(root / "APP_GAMMA" / "src" / "APP_GAMMA.c", "")
             put(root / ".conan" / "data" / "Core" / "70.0.0" / "_" / "_" / "package" / "abc" / "include" / "core.h", "")
             code = makefile_local_recover.main([
                 "--root", str(root),
@@ -455,10 +708,10 @@ class CollectorTests(unittest.TestCase):
             ])
             self.assertEqual(2, code)
             report = json.loads((output / "recovery-report.json").read_text())
-            self.assertEqual(["EQT_ALRT", "EQT_CAERO"], report["applications_detected"])
+            self.assertEqual(["APP_BETA", "APP_GAMMA"], report["applications_detected"])
             self.assertEqual(2, report["applications_count"])
-            self.assertEqual(2, report["applications"]["EQT_ALRT"]["build_files"])
-            self.assertEqual(2, report["applications"]["EQT_CAERO"]["build_files"])
+            self.assertEqual(2, report["applications"]["APP_BETA"]["build_files"])
+            self.assertEqual(2, report["applications"]["APP_GAMMA"]["build_files"])
 
     def test_client_log_is_copied_without_redaction(self):
         with tempfile.TemporaryDirectory() as temp:

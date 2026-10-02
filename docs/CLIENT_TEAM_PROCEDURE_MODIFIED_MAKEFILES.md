@@ -52,7 +52,7 @@ CAST_MAKEFILE_STAGING/
 │   ├── qcc-variants.json              # ou fichier équivalent attendu par CAST
 │   ├── *.macros.txt
 │   └── *.includes.txt
-├── build/                             # .d, .rsp ou fichiers équivalents
+├── build/                             # .rsp ou fichiers équivalents si disponibles
 ├── logs/
 ├── generated/                         # si applicable
 └── qnx/                               # si applicable
@@ -70,7 +70,7 @@ Une archive limitée au répertoire `build/` ne constitue pas un staging CAST co
 Dans ce cas, extraire ou monter l’arborescence localement, puis exécuter seulement un audit de diagnostic :
 
 ```sh
-python3 makefile_local_audit.py --root /local/LCCS_Archive_CAST
+python3 makefile_local_audit.py --root /local/PROJECT_Archive_CAST
 ```
 
 Un résultat `DIAGNOSTIC_ONLY` confirme que l’arborescence ne doit pas être transmise comme bundle CAST. Si c’est encore possible, le client relance le build local avec les makefiles modifiés et produit le staging complet.
@@ -79,17 +79,19 @@ Si le client ne peut pas régénérer ce staging, l’équipe CAST peut uniqueme
 
 ```sh
 python3 makefile_local_recover.py \
-  --root /local/LCCS_Archive_CAST \
+  --root /local/PROJECT_Archive_CAST \
   --output recovered-from-root
 ```
 
-Cette récupération produit d’abord un inventaire des éléments présents pour toutes les applications détectées : répertoires `build`, `build.make`, `flags.make`, `conaninfo.txt`, `conanbuildinfo.txt`, `.o.d`, sources, includes et en-têtes Conan rattachables aux métadonnées Conan disponibles. Elle génère `compile_commands.json` seulement si les fichiers CMake nécessaires sont présents.
+Cette récupération produit d’abord un inventaire des éléments présents pour toutes les applications détectées : répertoires `build`, `build.make`, `flags.make`, `conaninfo.txt`, `conanbuildinfo.txt`, `.o.d`, sources, includes et en-têtes Conan rattachables aux métadonnées Conan disponibles. Elle génère `compile_commands.json` seulement si les fichiers CMake nécessaires sont présents. Les fichiers `.d` ne sont pas nécessaires à l’analyse CAST stricte ; la récupération locale ne les recopie pas, car ils conservent souvent des chemins absolus de l’environnement client.
+
+Lorsque les probes compilateur ne sont pas présentes dans l’arborescence, le script reconstruit `compiler/qcc-variants.json`, les fichiers `*.macros.txt` et `*.includes.txt` à partir des variantes `-V`, des définitions `-D/-U` et des options d’inclusion observées dans les commandes de compilation. Cette récupération locale permet de poursuivre l’analyse sans staging client supplémentaire ; les fichiers sont identifiés dans le rapport comme `reconstructed_from_compile_commands` et doivent être validés par l’équipe CAST avant une qualification stricte.
 
 Pour isoler une seule application, ajouter `--application <NOM_APPLICATION>` :
 
 ```sh
 python3 makefile_local_recover.py \
-  --root /local/LCCS_Archive_CAST \
+  --root /local/PROJECT_Archive_CAST \
   --application <NOM_APPLICATION> \
   --output recovered-from-root
 ```

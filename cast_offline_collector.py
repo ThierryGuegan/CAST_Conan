@@ -403,6 +403,10 @@ def export_conan_packages(
                 "kind": "conan_export", "old_prefix": str(exported),
                 "new_prefix": str(destination), "logical_prefix": logical_root,
             })
+            mappings.append({
+                "kind": "conan_export_relative", "old_prefix": package["exported_root"],
+                "new_prefix": str(destination), "logical_prefix": logical_root,
+            })
         info = [
             f"Reference={package['reference']}", f"RecipeRevision={package['recipe_revision']}",
             f"Context={package['context']}", f"PackageId={package['package_id']}",
@@ -752,32 +756,43 @@ def normalize_path(value: str, directory: str, sysroot: str = "") -> str:
 
 def remap_path(value: str, directory: str, sysroot: str, mappings: List[Dict[str, str]]) -> Dict[str, str]:
     original = normalize_path(value, directory, sysroot)
+    candidates = [original]
+    cleaned = value.strip().strip('"').strip("'")
+    if cleaned.startswith("$SYSROOT"):
+        cleaned = (sysroot.rstrip("/") + cleaned[len("$SYSROOT"):]) if sysroot else cleaned
+    elif cleaned.startswith("="):
+        cleaned = (sysroot.rstrip("/") + "/" + cleaned[1:].lstrip("/")) if sysroot else cleaned
+    if cleaned and "://" not in cleaned and not os.path.isabs(cleaned):
+        root_relative = os.path.normpath(cleaned)
+        if root_relative not in candidates:
+            candidates.insert(0, root_relative)
     for mapping in sorted(mappings, key=lambda item: len(os.path.normpath(item["old_prefix"])), reverse=True):
         old = os.path.normpath(mapping["old_prefix"])
         if not old:
             continue
-        if "://" in original:
-            logical = mapping["logical_prefix"].rstrip("/")
-            if original == logical or original.startswith(logical + "/"):
-                relative = original[len(logical):].lstrip("/")
-            else:
-                continue
-        else:
-            try:
-                if os.path.commonpath([old, original]) != old:
+        for candidate in candidates:
+            if "://" in candidate:
+                logical = mapping["logical_prefix"].rstrip("/")
+                if candidate == logical or candidate.startswith(logical + "/"):
+                    relative = candidate[len(logical):].lstrip("/")
+                else:
                     continue
-            except ValueError:
-                continue
-            relative = os.path.relpath(original, old)
-            if relative == ".":
-                relative = ""
-        physical = Path(mapping["new_prefix"]) / relative
-        logical_path = mapping["logical_prefix"].rstrip("/") + (("/" + relative.replace(os.sep, "/")) if relative else "")
-        return {
-            "original": value, "resolved_original": original, "physical": str(physical),
-            "logical": logical_path, "status": "mapped" if physical.exists() else "mapped_target_missing",
-            "rule": mapping["kind"],
-        }
+            else:
+                try:
+                    if os.path.commonpath([old, candidate]) != old:
+                        continue
+                except ValueError:
+                    continue
+                relative = os.path.relpath(candidate, old)
+                if relative == ".":
+                    relative = ""
+            physical = Path(mapping["new_prefix"]) / relative
+            logical_path = mapping["logical_prefix"].rstrip("/") + (("/" + relative.replace(os.sep, "/")) if relative else "")
+            return {
+                "original": value, "resolved_original": candidate, "physical": str(physical),
+                "logical": logical_path, "status": "mapped" if physical.exists() else "mapped_target_missing",
+                "rule": mapping["kind"],
+            }
     return {"original": value, "resolved_original": original, "physical": "", "logical": "", "status": "unresolved", "rule": "no_mapping"}
 
 
@@ -1245,6 +1260,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         summary["manual_source_files_copied"] = copied
         summary["manual_source_files_skipped"] = skipped
         mappings.append({"kind": "client_drop_source", "old_prefix": str(source_root), "new_prefix": str(manual_destination), "logical_prefix": "source://manual"})
+        mappings.append({"kind": "client_drop_source_relative", "old_prefix": "source", "new_prefix": str(manual_destination), "logical_prefix": "source://manual"})
         for key in ("SourceRoot", "RepositoryRoot", "BuildSourceRoot"):
             if metadata.get(key):
                 mappings.append({"kind": key, "old_prefix": metadata[key], "new_prefix": str(manual_destination), "logical_prefix": "source://manual"})
@@ -1253,6 +1269,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         summary["generated_files_copied"] = copied
         summary["generated_files_skipped"] = skipped
         mappings.append({"kind": "client_drop_generated", "old_prefix": str(generated_root), "new_prefix": str(generated_destination), "logical_prefix": "source://generated"})
+        mappings.append({"kind": "client_drop_generated_relative", "old_prefix": "generated", "new_prefix": str(generated_destination), "logical_prefix": "source://generated"})
         if metadata.get("GeneratedRoot"):
             mappings.append({"kind": "GeneratedRoot", "old_prefix": metadata["GeneratedRoot"], "new_prefix": str(generated_destination), "logical_prefix": "source://generated"})
 

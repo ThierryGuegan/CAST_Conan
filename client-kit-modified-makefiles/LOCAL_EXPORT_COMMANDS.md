@@ -60,7 +60,7 @@ Transmettre l’archive, la fiche de contexte et le commit des makefiles modifi�
 ## 4. Auditer une archive brute reçue
 
 ```sh
-python3 makefile_local_audit.py --root /local/LCCS_Archive_CAST
+python3 makefile_local_audit.py --root /local/PROJECT_Archive_CAST
 ```
 
 Un statut `DIAGNOSTIC_ONLY` indique que le fichier contient des traces exploitables pour comprendre le build, mais pas les livrables nécessaires à une collecte stricte.
@@ -69,7 +69,7 @@ Un statut `DIAGNOSTIC_ONLY` indique que le fichier contient des traces exploitab
 
 ```sh
 python3 makefile_local_recover.py \
-  --root /local/LCCS_Archive_CAST \
+  --root /local/PROJECT_Archive_CAST \
   --output recovered-from-root
 ```
 
@@ -77,7 +77,7 @@ Pour limiter la récupération à une application :
 
 ```sh
 python3 makefile_local_recover.py \
-  --root /local/LCCS_Archive_CAST \
+  --root /local/PROJECT_Archive_CAST \
   --application <NOM_APPLICATION> \
   --output recovered-from-root
 ```
