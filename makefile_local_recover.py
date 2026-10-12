@@ -28,6 +28,9 @@ SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"}
 COMPILE_SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx"}
 TRACE_SUFFIXES = {".rsp", ".response"}
 DEPENDENCY_TRACE_SUFFIXES = {".d"}
+TEXT_REPLACEMENTS = {
+    "DU9105776": "DEVUSER",
+}
 
 
 def is_relative_to(path, root):
@@ -44,7 +47,28 @@ def relative_posix(path, root):
 
 def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(sanitize_value(data), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def sanitize_text(value):
+    for old, new in TEXT_REPLACEMENTS.items():
+        value = value.replace(old, new)
+    return value
+
+
+def sanitize_value(value):
+    if isinstance(value, str):
+        return sanitize_text(value)
+    if isinstance(value, list):
+        return [sanitize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: sanitize_value(item) for key, item in value.items()}
+    return value
+
+
+def write_text(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(sanitize_text(value), encoding="utf-8")
 
 
 def copy_file(source, destination):
@@ -157,6 +181,45 @@ def compiled_source_set(compile_commands):
         for command in compile_commands
         if Path(str(command.get("file", ""))).suffix.lower() in COMPILE_SOURCE_SUFFIXES
     }
+
+
+def compile_include_directories(compile_commands):
+    directories = set()
+    include_options = {"-I", "-isystem", "-iquote", "-idirafter"}
+    for command in compile_commands:
+        arguments = command.get("arguments", [])
+        index = 0
+        while index < len(arguments):
+            argument = arguments[index]
+            if argument in include_options and index + 1 < len(arguments):
+                value = arguments[index + 1]
+                index += 2
+            else:
+                value = ""
+                for prefix in ("-I", "-isystem=", "-iquote=", "-idirafter=", "-isystem", "-iquote", "-idirafter"):
+                    if argument.startswith(prefix) and argument != prefix:
+                        value = argument[len(prefix):]
+                        break
+                index += 1
+            if value.startswith("source/"):
+                directories.add(value[len("source/"):].strip("/"))
+    return directories
+
+
+def ensure_recovered_include_directories(root, output, compile_commands):
+    created = []
+    for relative in sorted(compile_include_directories(compile_commands)):
+        source = root / Path(relative)
+        if not source.is_dir():
+            continue
+        destination = output / "source" / Path(relative)
+        destination.mkdir(parents=True, exist_ok=True)
+        created.append({
+            "category": "source_directory",
+            "source": relative_posix(source, root),
+            "destination": relative_posix(destination, output),
+        })
+    return created
 
 
 def conan_reference_parts(reference):
@@ -308,8 +371,8 @@ def write_recovered_probe_files(output, compile_commands):
             *sorted(dict.fromkeys(include_paths)),
             "End of search list.",
         ]
-        macros.write_text("\n".join(macro_lines) + "\n", encoding="utf-8")
-        includes.write_text("\n".join(include_lines) + "\n", encoding="utf-8")
+        write_text(macros, "\n".join(macro_lines) + "\n")
+        write_text(includes, "\n".join(include_lines) + "\n")
         created.extend([macros, includes])
     return created
 
@@ -1043,6 +1106,7 @@ def recover(args):
     manifest_packages = conan_manifest_packages_with_headers(packages, conan_entries)
     probes = compiler_probe_files(root, app_roots)
     copied, not_copied, copied_files = copy_recovery_inputs(root, app_roots, output, packages, compile_commands)
+    copied_source_directories = ensure_recovered_include_directories(root, output, compile_commands)
     recovered_probe_placeholders = []
     if not probes and compile_commands:
         recovered_probe_placeholders = write_recovered_probe_files(output, compile_commands)
@@ -1086,7 +1150,7 @@ def recover(args):
     missing = []
     if not compile_commands:
         missing.append("compile commands")
-    if not packages:
+    if not manifest_packages:
         missing.append("Conan package metadata")
     if not copied["copied_source_files"]:
         missing.append("source/header files")
@@ -1111,6 +1175,7 @@ def recover(args):
         "conan_packages": len(manifest_packages),
         "not_copied_files": len(not_copied),
         "copied_mapping_files": len(copied_files),
+        "copied_source_directories": len(copied_source_directories),
         "root_files": copy_coverage["root_files"],
         "root_directories": copy_coverage["root_directories"],
         "output_files_at_coverage_report_time": copy_coverage["output_files_at_report_time"],

@@ -125,6 +125,70 @@ class CollectorTests(unittest.TestCase):
             ):
                 self.assertNotIn(str(package), (package / relative).read_text())
 
+    def test_collector_maps_unresolved_workspace_include_to_manual_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            valid_fixture(root)
+            put(root / "source" / "AppA" / "include" / "app.h", "#pragma once\n")
+            compile_db = root / "compilation" / "compile_commands.json"
+            commands = json.loads(compile_db.read_text())
+            commands[0]["arguments"].insert(2, "-Iunresolved/Users/DEVUSER/Documents/Workspace/AppA/./include")
+            put(compile_db, commands)
+
+            code, package = self.run_collector(root)
+
+            self.assertEqual(0, code)
+            self.assertEqual("READY_FOR_ANALYSIS", json.loads((package / "collection-status.json").read_text())["status"])
+            warnings = (package / "WARNINGS.txt").read_text()
+            self.assertNotIn("INCLUDE-UNRESOLVED", warnings)
+            profiles = json.loads((package / "cast-config" / "compilation-profiles.json").read_text())["profiles"]
+            self.assertIn(
+                "source/manual/AppA/include",
+                [item["physical"] for item in profiles[0]["mapped_includes"]],
+            )
+
+    def test_collector_materializes_missing_unresolved_workspace_include_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            valid_fixture(root)
+            put(root / "source" / "AppA" / "README.txt", "application marker\n")
+            compile_db = root / "compilation" / "compile_commands.json"
+            commands = json.loads(compile_db.read_text())
+            commands[0]["arguments"].insert(2, "-Iunresolved/Users/DEVUSER/Documents/Workspace/AppA/./include")
+            put(compile_db, commands)
+
+            code, package = self.run_collector(root)
+
+            self.assertEqual(0, code)
+            self.assertTrue((package / "source" / "manual" / "AppA" / "include").is_dir())
+            warnings = (package / "WARNINGS.txt").read_text()
+            self.assertNotIn("INCLUDE-UNRESOLVED", warnings)
+
+    def test_collector_anonymizes_user_id_but_keeps_lccs_name(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            valid_fixture(root)
+            identity_path = root / "identity" / "BUILD_IDENTITY.json"
+            identity = json.loads(identity_path.read_text())
+            identity["application"] = "LCCS_Archive_CAST"
+            put(identity_path, identity)
+            put(root / "source" / "AppA" / "README.txt", "application marker\n")
+            compile_db = root / "compilation" / "compile_commands.json"
+            commands = json.loads(compile_db.read_text())
+            commands[0]["arguments"].insert(2, "-Iunresolved/Users/DU9105776/Documents/Workspace/AppA/./include")
+            put(compile_db, commands)
+
+            code, package = self.run_collector(root)
+
+            self.assertEqual(0, code)
+            identity_text = (package / "identity" / "BUILD_IDENTITY.json").read_text()
+            evidence_compile = (package / "evidence" / "compilation" / "compile_commands.json").read_text()
+            profiles = (package / "cast-config" / "compilation-profiles.json").read_text()
+            self.assertIn("LCCS_Archive_CAST", identity_text)
+            for text in (identity_text, evidence_compile, profiles):
+                self.assertNotIn("DU9105776", text)
+            self.assertIn("DEVUSER", evidence_compile)
+
     def test_two_macro_sets_make_two_profiles(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "drop"
@@ -548,6 +612,64 @@ class CollectorTests(unittest.TestCase):
             self.assertTrue((output / "source" / "Core" / "SF" / "Services" / "include" / "bus.h").is_file())
             self.assertTrue((output / "source" / "Core" / "SF" / "arch" / "include" / "arch.h").is_file())
 
+    def test_makefile_local_recover_preserves_empty_include_directories_from_commands(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "PROJECT_Archive_CAST"
+            app = root / "Core"
+            output = base / "recovered"
+            put(app / "SF" / "Services" / "src" / "bus.c", "int bus(void){return 0;}\n")
+            (app / "SF" / "arch" / "include").mkdir(parents=True)
+            put(
+                app / "build" / "CMakeFiles" / "Core.dir" / "flags.make",
+                "C_INCLUDES = -Iunresolved/Users/DEVUSER/Documents/Workspace/Core/./SF/arch/include\n"
+                "C_FLAGS = -Vgcc_ntoarmv7le\n",
+            )
+            put(
+                app / "build" / "CMakeFiles" / "Core.dir" / "build.make",
+                "CMAKE_SOURCE_DIR = C:/Users/DEVUSER/Documents/Workspace/Core\n"
+                "CMAKE_BINARY_DIR = C:/Users/DEVUSER/Documents/Workspace/Core/build\n"
+                "\tC:/qnx/usr/bin/myCMakeQCC.bat $(C_INCLUDES) $(C_FLAGS) -c C:/Users/DEVUSER/Documents/Workspace/Core/./SF/Services/src/bus.c\n",
+            )
+
+            code = makefile_local_recover.main(["--root", str(root), "--output", str(output)])
+
+            self.assertEqual(2, code)
+            commands = json.loads((output / "compilation" / "compile_commands.json").read_text())
+            self.assertIn("-Isource/Core/SF/arch/include", commands[0]["arguments"])
+            self.assertTrue((output / "source" / "Core" / "SF" / "arch" / "include").is_dir())
+            report = json.loads((output / "recovery-report.json").read_text())
+            self.assertEqual(1, report["copied_source_directories"])
+
+    def test_makefile_local_recover_anonymizes_user_id_but_keeps_lccs_name(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "LCCS_Archive_CAST"
+            app = root / "Core"
+            output = base / "recovered"
+            put(app / "SF" / "Services" / "src" / "bus.c", "int bus(void){return 0;}\n")
+            put(
+                app / "build" / "CMakeFiles" / "Core.dir" / "flags.make",
+                "C_INCLUDES = -Iunresolved/Users/DU9105776/Documents/Workspace/External/include\n"
+                "C_FLAGS = -Vgcc_ntoarmv7le\n",
+            )
+            put(
+                app / "build" / "CMakeFiles" / "Core.dir" / "build.make",
+                "CMAKE_SOURCE_DIR = C:/Users/DU9105776/Documents/Workspace/Core\n"
+                "CMAKE_BINARY_DIR = C:/Users/DU9105776/Documents/Workspace/Core/build\n"
+                "\tC:/qnx/usr/bin/myCMakeQCC.bat $(C_INCLUDES) $(C_FLAGS) -c C:/Users/DU9105776/Documents/Workspace/Core/./SF/Services/src/bus.c\n",
+            )
+
+            code = makefile_local_recover.main(["--root", str(root), "--output", str(output)])
+
+            self.assertEqual(2, code)
+            identity_text = (output / "identity" / "BUILD_IDENTITY.json").read_text()
+            compile_text = (output / "compilation" / "compile_commands.json").read_text()
+            self.assertIn("LCCS_Archive_CAST", identity_text)
+            self.assertNotIn("DU9105776", identity_text)
+            self.assertNotIn("DU9105776", compile_text)
+            self.assertIn("DEVUSER", compile_text)
+
     def test_makefile_local_recover_keeps_conan_user_channel_disambiguation(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
@@ -642,6 +764,7 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(2, code)
             report = json.loads((output / "recovery-report.json").read_text())
             self.assertEqual(1, report["not_copied_files"])
+            self.assertIn("Conan package metadata", report["missing_for_strict_cast"])
             diagnostics = json.loads((output / "copy-diagnostics.json").read_text())
             self.assertEqual(1, diagnostics["not_copied_count"])
             self.assertEqual("conan_headers", diagnostics["not_copied"][0]["category"])

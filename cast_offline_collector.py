@@ -26,6 +26,9 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 COLLECTOR_VERSION = "2.1.0"
 MAX_RESPONSE_FILE_BYTES = 16 * 1024 * 1024
 MAX_PROBE_FILE_BYTES = 64 * 1024 * 1024
+TEXT_REPLACEMENTS = {
+    "DU9105776": "DEVUSER",
+}
 HEADER_EXTENSIONS = {
     ".h", ".hh", ".hpp", ".hxx", ".inc", ".inl", ".ipp", ".tcc",
     ".tpp", ".def", ".cfg", ".config",
@@ -70,9 +73,30 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def sanitize_text(value: str) -> str:
+    for old, new in TEXT_REPLACEMENTS.items():
+        value = value.replace(old, new)
+    return value
+
+
+def sanitize_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return sanitize_text(value)
+    if isinstance(value, list):
+        return [sanitize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: sanitize_value(item) for key, item in value.items()}
+    return value
+
+
+def write_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(sanitize_text(value), encoding="utf-8")
+
+
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(sanitize_value(value), indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
 
 
 class Audit:
@@ -249,7 +273,7 @@ def load_identity(raw_root: Path, audit: Audit) -> Tuple[Dict[str, str], Dict[st
     return metadata, structured
 
 
-def copy_tree_safe(source: Path, destination: Path, predicate=None) -> Tuple[int, int]:
+def copy_tree_safe(source: Path, destination: Path, predicate=None, sanitize_text_files: bool = False) -> Tuple[int, int]:
     copied = 0
     skipped = 0
     if not source.exists():
@@ -271,7 +295,10 @@ def copy_tree_safe(source: Path, destination: Path, predicate=None) -> Tuple[int
                 continue
             dst = destination / relative_root / filename
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
+            if sanitize_text_files and src.suffix.lower() in TEXT_EXTENSIONS:
+                write_text(dst, src.read_text(encoding="utf-8", errors="replace"))
+            else:
+                shutil.copy2(src, dst)
             copied += 1
     return copied, skipped
 
@@ -417,7 +444,7 @@ def export_conan_packages(
             f"ExportedHeaderCount={copied}",
         ]
         destination.mkdir(parents=True, exist_ok=True)
-        (destination / "CONAN_INFO.txt").write_text("\n".join(info) + "\n", encoding="utf-8")
+        write_text(destination / "CONAN_INFO.txt", "\n".join(info) + "\n")
         rows.append({**package, "destination": destination.relative_to(package_root).as_posix(), "exported_header_count": str(copied), "status": "COLLECTED"})
     report = package_root / "cast-config" / "conan-dependencies.csv"
     report.parent.mkdir(parents=True, exist_ok=True)
@@ -754,7 +781,47 @@ def normalize_path(value: str, directory: str, sysroot: str = "") -> str:
     return os.path.normpath(os.path.join(directory or ".", cleaned))
 
 
-def remap_path(value: str, directory: str, sysroot: str, mappings: List[Dict[str, str]]) -> Dict[str, str]:
+def remap_unresolved_workspace_path(
+    value: str, mappings: List[Dict[str, str]], allow_missing_directory: bool = False,
+) -> Optional[Dict[str, str]]:
+    normalized = value.strip().strip('"').strip("'").replace("\\", "/").rstrip("/")
+    if not normalized.startswith("unresolved/"):
+        return None
+    parts = [part for part in normalized[len("unresolved/"):].split("/") if part and part != "."]
+    for mapping in mappings:
+        if not mapping.get("kind", "").startswith("client_drop_source"):
+            continue
+        source_root = Path(mapping["new_prefix"])
+        if not source_root.is_dir():
+            continue
+        source_children = {child.name for child in source_root.iterdir()} if source_root.is_dir() else set()
+        for index, part in enumerate(parts):
+            if part not in source_children:
+                continue
+            candidate = source_root.joinpath(*parts[index:])
+            if not candidate.exists() and allow_missing_directory:
+                candidate.mkdir(parents=True, exist_ok=True)
+            if not candidate.exists():
+                continue
+            relative = "/".join(parts[index:])
+            logical_path = mapping["logical_prefix"].rstrip("/") + "/" + relative
+            return {
+                "original": value,
+                "resolved_original": normalized,
+                "physical": str(candidate),
+                "logical": logical_path,
+                "status": "mapped",
+                "rule": "client_drop_source_unresolved_workspace",
+            }
+    return None
+
+
+def remap_path(
+    value: str, directory: str, sysroot: str, mappings: List[Dict[str, str]], allow_missing_directory: bool = False,
+) -> Dict[str, str]:
+    unresolved_workspace = remap_unresolved_workspace_path(value, mappings, allow_missing_directory)
+    if unresolved_workspace:
+        return unresolved_workspace
     original = normalize_path(value, directory, sysroot)
     candidates = [original]
     cleaned = value.strip().strip('"').strip("'")
@@ -821,7 +888,7 @@ def profile_force_header(profile: Dict[str, Any], package_root: Path, destinatio
             continue
         relative = os.path.relpath(item["physical"], destination.parent).replace(os.sep, "/")
         lines.append(f'#include "{relative}"')
-    destination.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_text(destination, "\n".join(lines) + "\n")
 
 
 def map_records_and_build_profiles(
@@ -843,7 +910,7 @@ def map_records_and_build_profiles(
             ordered.extend(item for item in record["include_search_order"] if item["kind"] == kind)
         mapped_includes = []
         for position, item in enumerate(ordered):
-            mapped = remap_path(item["path"], record["directory"], sysroot, mappings)
+            mapped = remap_path(item["path"], record["directory"], sysroot, mappings, allow_missing_directory=True)
             mapped.update({"kind": item["kind"], "origin": item.get("origin", "command")})
             mapped_includes.append(mapped)
             remap_rows.append({
@@ -972,7 +1039,7 @@ def write_compilation_outputs(records: List[Dict[str, Any]], profiles: List[Dict
     relative_paths = []
     for path in include_paths:
         relative_paths.append(package_relative(path, package_root))
-    (config / "cast-include-paths.relative.txt").write_text("\n".join(relative_paths) + ("\n" if relative_paths else ""), encoding="utf-8")
+    write_text(config / "cast-include-paths.relative.txt", "\n".join(relative_paths) + ("\n" if relative_paths else ""))
     unresolved = [row for row in source_rows if row["status"] != "mapped"]
     for record in records:
         for category, items in (
@@ -986,7 +1053,10 @@ def write_compilation_outputs(records: List[Dict[str, Any]], profiles: List[Dict
                         "source": record["source"], "original": item["original"],
                         "status": f"{category}:{item['status']}",
                     })
-    (config / "unresolved-paths.txt").write_text("\n".join(f"{row.get('source','')} | {row.get('original','')} | {row.get('status','')}" for row in unresolved) + ("\n" if unresolved else ""), encoding="utf-8")
+    write_text(
+        config / "unresolved-paths.txt",
+        "\n".join(f"{row.get('source','')} | {row.get('original','')} | {row.get('status','')}" for row in unresolved) + ("\n" if unresolved else ""),
+    )
     lines = ["# CAST analysis plan", "", "Generated from exact compilation profiles. Review before applying in CAST Imaging.", ""]
     for unit in analysis_units:
         lines.extend([
@@ -997,7 +1067,7 @@ def write_compilation_outputs(records: List[Dict[str, Any]], profiles: List[Dict
             "Undefined macros:", *[f"- `{value}`" for value in unit["undefined_macros"]], "",
             f"Force include: `{unit['force_include']}`", "",
         ])
-    (config / "CAST_ANALYSIS_PLAN.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_text(config / "CAST_ANALYSIS_PLAN.md", "\n".join(lines) + "\n")
 
 
 def parse_dependency_rules(path: Path) -> List[Tuple[str, List[str]]]:
@@ -1107,7 +1177,7 @@ def write_identity(metadata: Dict[str, str], structured: Dict[str, Any], package
     values = dict(metadata)
     values["CollectorVersion"] = COLLECTOR_VERSION
     values["CollectionTimestampUTC"] = utc_iso()
-    (package_root / "identity" / "BUILD_IDENTITY.txt").write_text("\n".join(f"{key}={values[key]}" for key in sorted(values)) + "\n", encoding="utf-8")
+    write_text(package_root / "identity" / "BUILD_IDENTITY.txt", "\n".join(f"{key}={values[key]}" for key in sorted(values)) + "\n")
 
 
 def compare_baseline(package_root: Path, baseline: Optional[Path]) -> Dict[str, Any]:
@@ -1195,7 +1265,7 @@ def write_output_manifest(root: Path) -> None:
     rows = []
     for path in sorted(item for item in root.rglob("*") if item.is_file() and item.name != "manifest.sha256"):
         rows.append(f"{sha256(path)}  {path.relative_to(root).as_posix()}")
-    (root / "manifest.sha256").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    write_text(root / "manifest.sha256", "\n".join(rows) + "\n")
 
 
 def write_audit_outputs(package_root: Path, audit: Audit, summary: Dict[str, Any]) -> None:
@@ -1208,7 +1278,7 @@ def write_audit_outputs(package_root: Path, audit: Audit, summary: Dict[str, Any
     write_json(package_root / "collection-report.json", report)
     write_json(package_root / "collection-status.json", {"status": status, "mode": audit.mode, "critical_count": audit.critical_count, "warning_count": audit.warning_count})
     lines = [f"[{item['severity']}] {item['code']}: {item['message']}" + (f" ({item['path']})" if item["path"] else "") for item in audit.issues]
-    (package_root / "WARNINGS.txt").write_text("\n".join(lines) + ("\n" if lines else "No issue.\n"), encoding="utf-8")
+    write_text(package_root / "WARNINGS.txt", "\n".join(lines) + ("\n" if lines else "No issue.\n"))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1306,8 +1376,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     copy_tree_safe(raw_root / "logs", package_root / "evidence" / "logs")
     copy_tree_safe(raw_root / "evidence", package_root / "evidence" / "client")
-    copy_tree_safe(raw_root / "compiler", package_root / "evidence" / "compiler")
-    copy_tree_safe(raw_root / "compilation", package_root / "evidence" / "compilation")
+    copy_tree_safe(raw_root / "compiler", package_root / "evidence" / "compiler", sanitize_text_files=True)
+    copy_tree_safe(raw_root / "compilation", package_root / "evidence" / "compilation", sanitize_text_files=True)
     for source, destination in (
         (raw_root / "conan" / "profiles", package_root / "evidence" / "conan" / "profiles"),
         (raw_root / "conan" / "lockfiles", package_root / "evidence" / "conan" / "lockfiles"),
