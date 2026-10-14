@@ -116,7 +116,11 @@ Avant toute configuration CAST Imaging, vérifier les fichiers suivants dans le 
 |---|---|
 | `collection-status.json` | statut `READY_FOR_ANALYSIS` |
 | `collection-report.json` | absence d’anomalie critique |
-| `cast-config/analysis-units.json` | unités présentes, profils séparés, chemins relatifs au package |
+| `cast-config/single-analysis-unit.json` | configuration de l’AU C/C++ créée automatiquement par Imaging |
+| `cast-config/profile-reference.json` | référence des profils séparés, chemins relatifs au package |
+| `cast-config/module-candidates.json` | candidats de modules à créer après analyse |
+| `cast-config/MODULE_CREATION_HELP.md` | aide opérationnelle pour créer les modules |
+| `cast-config/force-include-all.h` | force-include consolidé présent, utilisable seulement si activé dans `single-analysis-unit.json` |
 | `CAST_ANALYSIS_PLAN.md` | plan lisible et cohérent avec le périmètre |
 | `cast-config/path-remapping.csv` | chemins originaux remappés vers `source://`, `conan://` ou `qnx://` |
 | `cast-config/source-coverage-summary.json` | couverture compatible avec le périmètre livré |
@@ -128,18 +132,23 @@ Si `unresolved-paths.txt` contient des chemins non résolus, le package n’est 
 
 ## 8. Configuration CAST Imaging
 
-Utiliser `CAST_ANALYSIS_PLAN.md` comme consigne opérationnelle, puis appliquer `cast-config/analysis-units.json`.
+Utiliser `CAST_ANALYSIS_PLAN.md` comme consigne opérationnelle, puis appliquer manuellement les paramètres de `cast-config/single-analysis-unit.json` à l’Analysis Unit C/C++ créée automatiquement par CAST Imaging. Ce JSON est une fiche de configuration portable, pas un artefact d’import automatique.
 
-Pour chaque unité d’analyse :
+Ne pas créer manuellement d’Analysis Units C/C++ ou JEE : ces technologies ne le supportent pas dans le flux Imaging actuel. `profile-reference.json` reste une référence de profils pour contrôle et diagnostic, pas une recette de création manuelle d’AU.
 
-1. créer une unité C/C++ correspondant au profil indiqué ;
-2. sélectionner uniquement les sources listées dans `sources` ;
-3. résoudre les chemins `includes` relativement à la racine du package ;
-4. conserver l’ordre des includes ;
-5. reporter les macros et undefinitions du profil ;
-6. utiliser le fichier `force_include` généré lorsqu’il est présent ;
-7. ne pas ajouter de dossier Conan `build` ;
-8. maintenir les unités manuelles et générées séparées lorsqu’elles sont séparées dans le plan.
+Pour l’AU C/C++ auto-créée :
+
+1. sélectionner `source/manual` comme racine source, et `source/generated` si le répertoire existe ;
+2. résoudre les chemins de `cast-config/cast-include-paths.relative.txt` relativement à la racine du package ;
+3. conserver l’ordre des includes ;
+4. utiliser le champ `force_include` de `cast-config/single-analysis-unit.json` seulement si `force_include_status = enabled` ;
+5. ne pas ajouter de dossier Conan `build` ;
+6. lancer l’analyse complète ;
+7. créer les modules après analyse, depuis le code analysé, en utilisant `cast-config/MODULE_CREATION_HELP.md` et `cast-config/module-candidates.json` comme aide.
+
+Si `force_include_status` commence par `disabled_`, ne pas appliquer `force-include-all.h` globalement. Les conflits listés dans `macro_conflicts` ou `preinclude_conflicts` doivent être traités comme un point de diagnostic après la première analyse complète.
+
+Les modules doivent être créés uniquement après la première analyse complète, à partir des objets visibles dans CAST Imaging. Les candidats proposés par `module-candidates.json` sont un point de départ : ils peuvent être fusionnés ou découpés selon les résultats d’analyse, les dépendances réelles et les règles de gouvernance applicative.
 
 Pour Python, configurer les répertoires indiqués dans le plan. Les sources Python ne dépendent pas des options GCC/QCC.
 
@@ -217,7 +226,11 @@ Un package produit ne doit jamais devenir une nouvelle source manuelle de vérit
 | `collection-status.json` | verdict machine |
 | `collection-report.json` | diagnostic de collecte |
 | `CAST_ANALYSIS_PLAN.md` | plan de configuration |
-| `analysis-units.json` | unités et profils |
+| `single-analysis-unit.json` | configuration de l’AU C/C++ auto-créée |
+| `profile-reference.json` | référence des profils |
+| `module-candidates.json` | candidats de modules post-analyse |
+| `MODULE_CREATION_HELP.md` | aide de création des modules |
+| `force-include-all.h` | force-include consolidé, si activé |
 | `qualification.json` | qualification après analyse, si logs fournis |
 | logs CAST Imaging | trace d’exécution et support de diagnostic |
 

@@ -109,14 +109,42 @@ class CollectorTests(unittest.TestCase):
             profiles = json.loads((package / "cast-config" / "compilation-profiles.json").read_text())["profiles"]
             self.assertIn("__QNX__=1", [item["value"] for item in profiles[0]["macro_actions"]])
             self.assertIn("QNX_FUNC(x)=((x)+1)", [item["value"] for item in profiles[0]["macro_actions"]])
-            units = json.loads((package / "cast-config" / "analysis-units.json").read_text())["analysis_units"]
-            self.assertEqual("PACKAGE_ROOT", units[0]["path_base"])
-            self.assertTrue(all(not value.startswith("/") for value in units[0]["includes"]))
+            profile_reference = json.loads((package / "cast-config" / "profile-reference.json").read_text())
+            self.assertIn("Do not use it to create C/C++ or JEE Analysis Units manually", profile_reference["purpose"])
+            self.assertEqual("PACKAGE_ROOT", profile_reference["profiles"][0]["path_base"])
+            self.assertTrue(all(not value.startswith("/") for value in profile_reference["profiles"][0]["includes"]))
+            single_unit = json.loads((package / "cast-config" / "single-analysis-unit.json").read_text())
+            self.assertEqual("PACKAGE_ROOT", single_unit["path_base"])
+            self.assertEqual("not_supported", single_unit["manual_analysis_unit_creation"]["c_cpp"])
+            self.assertEqual("not_supported", single_unit["manual_analysis_unit_creation"]["jee"])
+            self.assertIn("source/manual", single_unit["source_roots"])
+            self.assertEqual("cast-config/force-include-all.h", single_unit["force_include"])
+            self.assertEqual("cast-config/profile-reference.json", single_unit["profile_reference"])
+            self.assertEqual("cast-config/MODULE_CREATION_HELP.md", single_unit["module_creation_help"])
+            self.assertEqual("cast-config/module-candidates.json", single_unit["module_candidates"])
+            self.assertEqual("enabled", single_unit["force_include_status"])
+            self.assertEqual([], single_unit["macro_conflicts"])
+            self.assertIn("after the full code analysis", single_unit["module_creation"])
+            consolidated_force = (package / "cast-config" / "force-include-all.h").read_text()
+            self.assertIn('force-include-profile-', consolidated_force)
+            module_candidates = json.loads((package / "cast-config" / "module-candidates.json").read_text())
+            self.assertEqual("post_analysis", module_candidates["creation_stage"])
+            self.assertEqual(["manual-root"], [item["name"] for item in module_candidates["modules"]])
+            self.assertEqual(["source/manual"], module_candidates["modules"][0]["source_roots"])
+            module_help = (package / "cast-config" / "MODULE_CREATION_HELP.md").read_text()
+            self.assertIn("Create modules after the full CAST Imaging analysis", module_help)
+            plan = (package / "cast-config" / "CAST_ANALYSIS_PLAN.md").read_text()
+            self.assertIn("Do not manually create C/C++ or JEE Analysis Units", plan)
+            self.assertIn("create modules after the first full analysis", plan)
             dependencies = (package / "cast-config" / "dependency-files.csv").read_text()
             self.assertNotIn("dep.h:\n", dependencies)
             self.assertFalse((package / "cast-config" / "cast-include-paths.absolute.txt").exists())
             for relative in (
-                "cast-config/analysis-units.json",
+                "cast-config/profile-reference.json",
+                "cast-config/single-analysis-unit.json",
+                "cast-config/module-candidates.json",
+                "cast-config/MODULE_CREATION_HELP.md",
+                "cast-config/force-include-all.h",
                 "cast-config/compilation-profiles.json",
                 "cast-config/compiler-invocations.json",
                 "cast-config/path-remapping.csv",
@@ -197,6 +225,32 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(0, code)
             profiles = json.loads((package / "cast-config" / "compilation-profiles.json").read_text())["profiles"]
             self.assertEqual(2, len(profiles))
+            single_unit = json.loads((package / "cast-config" / "single-analysis-unit.json").read_text())
+            self.assertEqual("", single_unit["force_include"])
+            self.assertEqual("cast-config/force-include-all.h", single_unit["force_include_candidate"])
+            self.assertEqual("disabled_macro_conflicts", single_unit["force_include_status"])
+            conflicts = {item["macro"]: item["actions"] for item in single_unit["macro_conflicts"]}
+            self.assertEqual(["define:MODE=1", "define:MODE=2"], conflicts["MODE"])
+            plan = (package / "cast-config" / "CAST_ANALYSIS_PLAN.md").read_text()
+            self.assertIn("not enabled globally because profile preprocessor conflicts were detected", plan)
+
+    def test_partial_macro_set_disables_global_force_include(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "drop"
+            valid_fixture(root, two_profiles=True)
+            compile_db = root / "compilation" / "compile_commands.json"
+            commands = json.loads(compile_db.read_text())
+            commands[1]["arguments"].remove("-DMODE=2")
+            put(compile_db, commands)
+
+            code, package = self.run_collector(root)
+
+            self.assertEqual(0, code)
+            single_unit = json.loads((package / "cast-config" / "single-analysis-unit.json").read_text())
+            self.assertEqual("", single_unit["force_include"])
+            self.assertEqual("disabled_macro_conflicts", single_unit["force_include_status"])
+            conflicts = {item["macro"]: item["actions"] for item in single_unit["macro_conflicts"]}
+            self.assertEqual(["absent", "define:MODE=1"], conflicts["MODE"])
 
     def test_duplicate_conan_identity_is_blocking(self):
         with tempfile.TemporaryDirectory() as temp:

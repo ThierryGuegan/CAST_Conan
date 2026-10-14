@@ -180,27 +180,40 @@ Chaque signature distincte (langage, compilateur, variante QCC, standard, ordre 
 
 ## Configuration CAST Imaging
 
-Le package produit contient `cast-config/analysis-units.json` et `CAST_ANALYSIS_PLAN.md`. Pour chaque unité :
+CAST Imaging ne permet pas actuellement de créer manuellement des Analysis Units C/C++ ou JEE. Le package produit contient donc une configuration pour l’AU auto-créée, une référence de profils et une aide à la création des modules :
 
-1. créer une unité d’analyse C/C++ correspondant au profil ;
-2. sélectionner uniquement les sources listées dans `sources` ;
-3. résoudre chaque chemin `includes` relativement à la racine extraite du package (`path_base = PACKAGE_ROOT`) et conserver l’ordre ;
-4. reporter les macros de `macros` et les undefinitions de `undefined_macros`, ou utiliser le fichier `force_include` généré ;
-5. ne pas ajouter les dossiers Conan `build` ; seuls les packages `host` collectés sont présents ;
-6. maintenir les unités `MANUAL-*` et `GENERATED-*` séparées, même lorsqu’elles partagent un profil ;
-7. configurer Python sur `source/manual` et `source/generated` selon l’emplacement réel des `.py` ; Python ne dépend pas des options GCC/QCC.
+- `cast-config/single-analysis-unit.json` : consigne opérationnelle pour l’Analysis Unit C/C++ créée automatiquement par Imaging ;
+- `cast-config/profile-reference.json` : référence détaillée par profil de compilation, à utiliser pour diagnostic et contrôle ;
+- `cast-config/module-candidates.json` et `cast-config/MODULE_CREATION_HELP.md` : aide à la création des modules après analyse.
+
+Pour C/C++ :
+
+1. importer le ZIP complet dans CAST Imaging ;
+2. conserver l’Analysis Unit C/C++ créée automatiquement ;
+3. configurer cette AU avec `source/manual` comme racine source, et `source/generated` si présent ;
+4. ajouter les includes listés dans `cast-config/cast-include-paths.relative.txt`, résolus relativement à la racine extraite du package ;
+5. utiliser le champ `force_include` de `cast-config/single-analysis-unit.json` seulement si `force_include_status = enabled` ;
+6. lancer l’analyse complète ;
+7. créer les modules après analyse, à partir du code analysé, en utilisant `cast-config/MODULE_CREATION_HELP.md` et `cast-config/module-candidates.json` comme point de départ.
+
+`single-analysis-unit.json` n’est pas importé automatiquement par Imaging : il sert de fiche de configuration à reporter sur l’AU C/C++ créée automatiquement. `profile-reference.json` conserve les sources, includes, macros, undefinitions et force-includes par profil. Il ne doit pas être appliqué comme une demande de création manuelle d’AU C/C++ ou JEE.
+
+Si `force_include_status` commence par `disabled_`, ne pas appliquer `force-include-all.h` globalement : les profils n’ont pas tous le même contexte de préprocesseur. Lancer une première analyse avec les includes globaux, puis utiliser `macro_conflicts`, `preinclude_conflicts` et `profile-reference.json` pour diagnostiquer les erreurs de préprocesseur.
+
+Pour Python, configurer les répertoires indiqués dans le plan. Les sources Python ne dépendent pas des options GCC/QCC.
 
 ```mermaid
 flowchart LR
-    U["analysis-units.json"] --> M["Unité MANUAL"]
-    U --> G["Unité GENERATED"]
-    M --> P["Profil exact"]
-    G --> P
-    P --> I["Includes ordonnés"]
-    P --> D["Macros / undef / force-include"]
+    Z["ZIP CAST"] --> A["AU C/C++ auto-créée"]
+    S["single-analysis-unit.json"] --> A
+    A --> F["Analyse complète"]
+    F --> M["Modules après analyse"]
+    C["module-candidates.json"] --> M
+    H["MODULE_CREATION_HELP.md"] --> M
+    U["profile-reference.json"] --> R["Référence profils"]
 ```
 
-Les chemins absolus d’origine ne sont jamais demandés à la machine CAST. Le remapping utilise trois espaces logiques : `source://`, `conan://` et `qnx://`. Les chemins opérationnels dans `analysis-units.json` sont relatifs au package ; `path-remapping.csv` garde la trace de chaque conversion. Toute entrée non remappée est bloquante et figure dans `unresolved-paths.txt`.
+Les chemins absolus d’origine ne sont jamais demandés à la machine CAST. Le remapping utilise trois espaces logiques : `source://`, `conan://` et `qnx://`. Les chemins opérationnels dans `single-analysis-unit.json` et `profile-reference.json` sont relatifs au package ; `path-remapping.csv` garde la trace de chaque conversion. Toute entrée non remappée est bloquante et figure dans `unresolved-paths.txt`.
 
 Les intitulés précis des écrans peuvent varier avec le niveau de maintenance d’Imaging v3. `CAST_ANALYSIS_PLAN.md` est donc la spécification d’entrée à appliquer, puis à contrôler via les logs d’analyse.
 
@@ -210,7 +223,11 @@ Les intitulés précis des écrans peuvent varier avec le niveau de maintenance 
 |---|---|
 | `collection-status.json` | Verdict machine : `READY_FOR_ANALYSIS`, `NOT_QUALIFIED` ou `EXPLORATORY` |
 | `collection-report.json` | Anomalies, compteurs, couverture et synthèse |
-| `cast-config/analysis-units.json` | Configuration portable par profil |
+| `cast-config/single-analysis-unit.json` | Configuration de l’AU C/C++ auto-créée par CAST Imaging |
+| `cast-config/profile-reference.json` | Référence portable par profil de compilation |
+| `cast-config/module-candidates.json` | Candidats de modules à créer après analyse |
+| `cast-config/MODULE_CREATION_HELP.md` | Mode d’emploi de création des modules |
+| `cast-config/force-include-all.h` | Force-include consolidé, utilisable seulement si activé dans `single-analysis-unit.json` |
 | `cast-config/path-remapping.csv` | Trace chemin original → chemin collecté |
 | `cast-config/source-coverage-summary.json` | Couverture des sources C/C++ collectées par une commande réelle |
 | `cast-config/baseline-diff.json` | Dérive identité/Conan/profils par rapport à un précédent package |
@@ -240,6 +257,15 @@ Si les makefiles ont déjà été modifiés côté client, utiliser la variante 
 ```sh
 python3 -m unittest discover -s tests -v
 python3 -m py_compile cast_offline_collector.py client_ci_export.py makefile_local_export.py makefile_local_audit.py makefile_local_recover.py
+```
+
+Sous Windows, si le répertoire temporaire système est restreint par le sandbox, forcer les temporaires dans le dépôt avant de lancer les tests :
+
+```powershell
+$env:TMP = Join-Path (Get-Location) ".codex-tmp"
+$env:TEMP = $env:TMP
+New-Item -ItemType Directory -Force -Path $env:TMP | Out-Null
+python -m unittest discover -s tests -v
 ```
 
 Le code utilise uniquement la bibliothèque standard Python 3.9+.
