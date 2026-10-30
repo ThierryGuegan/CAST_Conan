@@ -252,6 +252,16 @@ En contrepartie, la solution recommandée exige une discipline d’artefacts CI 
 
 Si les makefiles ont déjà été modifiés côté client, utiliser la variante locale dédiée plutôt que cette procédure standard. Dans ce cas, les makefiles produisent un staging local, puis `makefile_local_export.py` le normalise en `CAST_DELIVERABLES_BUNDLE`. Si CAST reçoit une arborescence locale incomplète, `makefile_local_audit.py` confirme les livrables manquants. Lorsque le staging complet ne peut pas être redemandé, `makefile_local_recover.py` reconstruit un dossier de récupération partielle à partir des répertoires `build` présents sous la racine locale.
 
+## Makefile classique et SDK Linux
+
+Pour un Makefile classique avec SDK Linux et DDS, sans traces CMake exploitables,
+utiliser la variante locale exploratoire `makefile_sdk_recover.py`. Le profil
+`examples/makefile-sdk-linux-arm64.json` decrit explicitement le contexte examine ;
+il doit etre relu avant utilisation. Le script produit un repertoire et un ZIP
+`EXPLORATORY`, avec commandes reconstruites, includes relatifs et rapports de copie.
+Le mode d'emploi est dans [la procedure Makefile / SDK](docs/CAST_TEAM_PROCEDURE_MAKEFILE_SDK.md).
+Ce flux autonome ne passe pas par la qualification stricte Conan/QCC existante.
+
 ## Tests
 
 ```sh

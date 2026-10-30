@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "compiler": "aarch64-knds-linux-gcc",
+  "architecture": "aarch64",
+  "application_roots": ["src", "include"],
+  "source_globs": ["src/*.c"],
+  "flags": [
+    "-mbranch-protection=standard", "-Werror", "-Wall", "-Wextra",
+    "-Wunused-result", "-fstack-protector-strong", "-Wstrict-prototypes",
+    "-O2", "-Wconversion", "-Wbad-function-cast", "-Wshadow",
+    "-Wdouble-promotion", "-Wformat=2", "-Wformat-truncation",
+    "-Wformat-overflow", "-Wvla", "-fno-common"
+  ],
+  "defines": ["_FORTIFY_SOURCE=2", "RTI_UNIX", "RTI_LINUX", "RTI_64BIT"],
+  "includes": [
+    {"path": "include", "kind": "I"},
+    {
+      "path": "DDS/rti_connext_dds-7.3.1/include",
+      "kind": "I",
+      "dependency": "dds",
+      "subdirectories": [".", "ndds"]
+    }
+  ],
+  "sysroot": {
+    "path": "env_cross_compil/bbel/3.0/sysroots/aarch64-knds-linux",
+    "include_subdirectories": ["usr/include"]
+  },
+  "evidence_files": [
+    "Makefile",
+    "build_tools/cross_build.mk",
+    "build_tools/cflags/cflags.mk",
+    "env_cross_compil/bbel/3.0/environment-setup-aarch64-knds-linux",
+    "env_cross_compil/bbel/3.0/site-config-aarch64-knds-linux",
+    "env_cross_compil/bbel/3.0/version-aarch64-knds-linux"
+  ]
+}

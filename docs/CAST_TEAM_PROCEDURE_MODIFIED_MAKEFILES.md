@@ -37,6 +37,11 @@ Ne pas créer manuellement d’Analysis Units C/C++ ou JEE dans Imaging. Utilise
 
 ## 2. Exécution CAST
 
+Pour une arborescence avec Makefile classique et SDK Linux, sans `build.make` ni
+`flags.make`, suivre [la variante Makefile / SDK](CAST_TEAM_PROCEDURE_MAKEFILE_SDK.md).
+Elle produit un ZIP exploratoire autonome via `makefile_sdk_recover.py` et un profil
+JSON relu. Les commandes ci-dessous concernent le flux de bundle Conan/QCC existant.
+
 La commande reste inchangée :
 
 ```sh
